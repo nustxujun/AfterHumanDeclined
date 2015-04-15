@@ -24,8 +24,33 @@ namespace AHD
 			float meshScale;
 
 		};
+
+		struct Result
+		{
+			typedef unsigned int ARGB;
+			ARGB* voxels = nullptr;
+			int width, height, depth;
+
+			ARGB getColor(int x, int y, int z)
+			{
+				return getColor(x + y * width + z * width * height);
+			}
+
+			ARGB getColor(int index)
+			{
+				return voxels[index];
+			}
+
+			~Result()
+			{
+				if (voxels != nullptr)
+				delete voxels;
+			}
+
+			
+		};
 	public :
-		void voxelize(const Parameter& p);
+		void voxelize(Result& output, const Parameter& p);
 
 
 		template<class T>
