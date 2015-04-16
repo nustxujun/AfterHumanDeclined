@@ -21,13 +21,22 @@ ID3D11InputLayout*      vertexLayout = NULL;
 ID3D11Buffer*           vertexBuffer = NULL;
 ID3D11Buffer*           indexBuffer = NULL;
 ID3D11Buffer*			constantBuffer = NULL;
+ID3D11Buffer*			variableBuffer = NULL;
+Voxelizer::Result		voxels;
 
 struct ConstantBuffer
 {
 	XMMATRIX world;
 	XMMATRIX view;
 	XMMATRIX proj;
+	XMFLOAT4 lightdir;
 } constants;
+
+struct VariableBuffer
+{
+	XMMATRIX local;
+	XMFLOAT4 color;
+}variables;
 
 struct SimpleVertex
 {
@@ -342,7 +351,13 @@ HRESULT initDevice()
 	if (FAILED(hr))
 		return hr;
 
+
+	hr = createBuffer(&variableBuffer, D3D11_BIND_CONSTANT_BUFFER, sizeof(variables), &variables);
+	if (FAILED(hr))
+		return hr;
+
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
+	context->VSSetConstantBuffers(1, 1, &variableBuffer);
 
 	// Create vertex buffer
 	SimpleVertex vertices[] =
@@ -420,13 +435,46 @@ HRESULT initDevice()
 	return S_OK;
 }
 
+#include <vector>
+
 HRESULT initGeometry()
 {
 	Voxelizer v;
+	Voxelizer::Parameter para;
 	
 
+	FILE* f;
+	fopen_s(&f, "teapot.mesh", "rb");
+	//FILE* f = fopen("../Reasource/Model/tiger.mesh", "rb");
+	struct MeshInfo
+	{
+		int vertexSize;
+		int vertexCount;
+		int indexCount;
+	};
+	MeshInfo info;
+	fread(&info, sizeof(MeshInfo), 1, f);
 
+	std::vector<char*> verts;
+	verts.resize(info.vertexCount * info.vertexSize);
+	std::vector<short> indexs;
+	indexs.resize(info.indexCount);
 
+	//Ð´ÈëÊý¾Ý
+	fread(&verts[0], info.vertexSize * info.vertexCount, 1, f);
+	fread(&indexs[0], 2 * info.indexCount, 1, f);
+	fclose(f);
+
+	para.vertexCount = info.vertexCount;
+	para.vertexStride = info.vertexSize;
+	para.vertices = &verts[0];
+	para.indexCount = info.indexCount;
+	para.indexStride = 2;
+	para.indexes = &indexs[0];
+	para.voxelSize = 1.0f;
+	para.meshScale = 25.0f;
+
+	v.voxelize(voxels, para);
 
 
 	return S_OK;
@@ -437,6 +485,7 @@ HRESULT initGeometry()
 void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
+	SAFE_RELEASE(variableBuffer);
 	SAFE_RELEASE(constantBuffer);
 	SAFE_RELEASE(vertexBuffer);
 	SAFE_RELEASE(indexBuffer);
@@ -456,15 +505,32 @@ void render()
 	float ClearColor[4] = { 0.0f, 0.125f, 0.3f, 1.0f }; // red,green,blue,alpha
 	context->ClearRenderTargetView(renderTargetView, ClearColor);
 
+	context->UpdateSubresource(constantBuffer, 0, NULL, &constants, 0, 0);
 
 
 	// Render a triangle
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
-	context->UpdateSubresource(constantBuffer, 0, 0, &constants, 0, 0);
 	
+	int count = voxels.width * voxels.height * voxels.depth;
+	for (int z = 0; z < voxels.depth; ++z)
+	{
+		for (int y = 0; y < voxels.height; ++y)
+		{
+			for (int x = 0; x < voxels.width; ++x)
+			{
+				Voxelizer::Result::ARGB c = voxels.getColor(x, y, z);
+				if (c == 0)
+					continue;
+				//variables.color = c;
+				variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2, y * 2, z * 2));
+				context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
+				context->DrawIndexed(36, 0, 0);
 
-	context->DrawIndexed(36, 0, 0);
+			}
+		}
+	}
+
 
 
 

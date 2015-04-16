@@ -11,17 +11,17 @@ namespace AHD
 	public:
 		struct Parameter
 		{
-			const void* vertices;
-			size_t vertexCount;
-			size_t vertexStride;
-			size_t positionElemOffset;
+			const void* vertices = nullptr;
+			size_t vertexCount = 0;
+			size_t vertexStride = 0;
+			size_t positionElemOffset = 0;
 			
-			const void* indexes;
-			size_t indexCount;
-			size_t indexStride;
+			const void* indexes = nullptr;
+			size_t indexCount = 0;
+			size_t indexStride = 0;
 			
-			float voxelSize;
-			float meshScale;
+			float voxelSize = 1.0f;
+			float meshScale = 1.0f;
 
 		};
 
