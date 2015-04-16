@@ -14,7 +14,7 @@ using namespace AHD;
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
 
-#define EXCEPT(x) 
+#define EXCEPT(x) {throw std::exception(x);}
 
 #define CHECK_RESULT(x, y) { if (FAILED(x)) EXCEPT(y); }
 
@@ -154,7 +154,7 @@ HRESULT Voxelizer::createBuffer(ID3D11Buffer** buffer, ID3D11Device* device, D3D
 	return device->CreateBuffer(&bd, initdata ? &InitData : 0, buffer);
 }
 
-void Voxelizer::voxelize(const Parameter& para)
+void Voxelizer::voxelize(Result& result, const Parameter& para)
 {
 	AABB aabb;
 	std::vector<Vector3> verts;
@@ -184,8 +184,8 @@ void Voxelizer::voxelize(const Parameter& para)
 	size = aabb.getSize() / para.voxelSize;
 	size += Vector3::UNIT_SCALE;
 
-	size_t a = std::max(size.x, std::max(size.y, size.z));
-	Chunk* chunk = new Chunk(a, para.voxelSize);
+	size_t a = floor(std::max(size.x, std::max(size.y, size.z)));
+	result.init(size.x, size.y, size.z);
 
 	Interface<ID3D11Device> device;
 	Interface<ID3D11DeviceContext> context;
@@ -233,14 +233,14 @@ void Voxelizer::voxelize(const Parameter& para)
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	Interface<ID3D11Buffer> indexBuffer;
-	bool useIndex = para.indexCount != 0 && para.indexes != nullptr && para.indexstride != 0;
+	bool useIndex = para.indexCount != 0 && para.indexes != nullptr && para.indexStride != 0;
 	if (useIndex)
 	{
-		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.indexCount * para.indexstride, para.indexes), "fail to create index buffer,  cant use gpu voxelizer");
+		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.indexCount * para.indexStride, para.indexes), "fail to create index buffer,  cant use gpu voxelizer");
 
 
 		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
-		switch (para.indexstride)
+		switch (para.indexStride)
 		{
 			case 2: format = DXGI_FORMAT_R16_UINT; break;
 			case 4: format = DXGI_FORMAT_R32_UINT; break;
@@ -361,8 +361,8 @@ void Voxelizer::voxelize(const Parameter& para)
 				const int* begin = (const int*)(depth + mr.RowPitch * y);
 				for (int x = 0; x < size.x; ++x)
 				{
-					if (*begin != 0 && chunk->getBlock(x, y, z) == nullptr)
-						chunk->createBlock(x, y, z);
+					if (*begin != 0)
+						result.setColor(*begin, x, y, z);
 
 					++begin;
 				}
@@ -372,5 +372,5 @@ void Voxelizer::voxelize(const Parameter& para)
 		context->Unmap(debug, 0);
 	}
 
-	return chunk;
+	
 }

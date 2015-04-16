@@ -31,9 +31,25 @@ namespace AHD
 			ARGB* voxels = nullptr;
 			int width, height, depth;
 
+			void init(int w, int h, int d)
+			{
+				clean();
+
+				width = w;
+				height = h;
+				depth = d;
+
+				voxels = new ARGB[w * h * d]();
+			}
+
+			int getIndex(int x, int y, int z)
+			{
+				return x + y * width + z * width * height;
+			}
+
 			ARGB getColor(int x, int y, int z)
 			{
-				return getColor(x + y * width + z * width * height);
+				return getColor(getIndex(x,y,z));
 			}
 
 			ARGB getColor(int index)
@@ -41,10 +57,26 @@ namespace AHD
 				return voxels[index];
 			}
 
-			~Result()
+			void setColor(ARGB c, int x, int y, int z)
+			{
+				setColor(c, getIndex(x, y, z));
+			}
+
+			void setColor(ARGB c, int index)
+			{
+				voxels[index] = c;
+			}
+
+			void clean()
 			{
 				if (voxels != nullptr)
-				delete voxels;
+					delete voxels;
+				voxels = nullptr;
+			}
+
+			~Result()
+			{
+				clean();
 			}
 
 			
