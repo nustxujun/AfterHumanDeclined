@@ -19,11 +19,31 @@ ID3D11VertexShader*     vertexShader = NULL;
 ID3D11PixelShader*      pixelShader = NULL;
 ID3D11InputLayout*      vertexLayout = NULL;
 ID3D11Buffer*           vertexBuffer = NULL;
+ID3D11Buffer*			constantBuffer = NULL;
+
+struct ConstantBuffer
+{
+	XMMATRIX world;
+	XMMATRIX view;
+	XMMATRIX proj;
+} constants;
 
 struct SimpleVertex
 {
 	XMFLOAT3 Pos;
 };
+
+enum Button
+{
+	MouseLeft,
+	MouseRight,
+
+
+	B_COUNT
+};
+
+bool mButtonState[B_COUNT] = {false};
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -41,6 +61,56 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			PostQuitMessage(0);
 			break;
 
+		case WM_LBUTTONDOWN: mButtonState[MouseLeft] = true; break;
+		case WM_LBUTTONUP: mButtonState[MouseLeft] = false; break;
+		case WM_MOUSEWHEEL:
+		{
+			union
+			{
+				int para;
+				struct
+				{
+					short b;
+					short roll;
+				};
+			}wheelpara = { wParam };
+
+			float scale = 1.0f;
+			if (wheelpara.roll > 0)
+				scale *= wheelpara.roll / 100.0f ;
+			else
+				scale /= -wheelpara.roll / 100.0f;
+
+			XMMATRIX s = XMMatrixScaling(scale, scale, scale);
+			constants.world = s * constants.world;
+
+		}
+			break;
+		case WM_MOUSEMOVE:
+		{
+			union
+			{
+				int para;
+				struct
+				{
+					short x;
+					short y;
+				};
+			}mousepos = { lParam };
+
+			static short lastX = mousepos.x;
+			static short lastY = mousepos.y;
+
+			if (mButtonState[MouseLeft])
+			{
+				XMMATRIX rot = XMMatrixRotationRollPitchYaw((mousepos.y - lastY) / 100.0f, (mousepos.x - lastX) / 100.0f, 0);
+				constants.world = rot * constants.world;
+
+			}
+
+			lastX = mousepos.x;
+			lastY = mousepos.y;
+		}
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 	}
@@ -104,6 +174,20 @@ HRESULT compileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
 	if (pErrorBlob) pErrorBlob->Release();
 
 	return S_OK;
+}
+
+HRESULT createBuffer(ID3D11Buffer** buffer, D3D11_BIND_FLAG flag, size_t size, const void* initdata)
+{
+	D3D11_BUFFER_DESC bd;
+	ZeroMemory(&bd, sizeof(bd));
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.ByteWidth = size;
+	bd.BindFlags = flag;
+	bd.CPUAccessFlags = 0;
+	D3D11_SUBRESOURCE_DATA InitData;
+	ZeroMemory(&InitData, sizeof(InitData));
+	InitData.pSysMem = initdata;
+	return device->CreateBuffer(&bd, initdata ? &InitData : 0, buffer);
 }
 
 HRESULT initDevice()
@@ -235,6 +319,36 @@ HRESULT initDevice()
 	if (FAILED(hr))
 		return hr;
 
+
+
+	// Set primitive topology
+	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+
+	XMVECTOR Eye = XMVectorSet(0.0, 0, -10.0, 0.0f);
+	XMVECTOR At = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+	XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	constants.world = XMMatrixIdentity();
+	constants.view = XMMatrixLookAtLH(Eye, At, Up);
+	constants.view = XMMatrixTranspose(constants.view);
+	constants.proj = XMMatrixPerspectiveFovLH(XM_PIDIV4, width / (FLOAT)height, 0.01f, 1000.0f);
+	constants.proj = XMMatrixTranspose(constants.proj);
+
+
+
+	hr = createBuffer(&constantBuffer, D3D11_BIND_CONSTANT_BUFFER, sizeof(constants), &constants);
+	if (FAILED(hr))
+		return hr;
+
+	context->VSSetConstantBuffers(0, 1, &constantBuffer);
+
+
+
+	return S_OK;
+}
+
+HRESULT initGeometry()
+{
 	// Create vertex buffer
 	SimpleVertex vertices[] =
 	{
@@ -242,16 +356,9 @@ HRESULT initDevice()
 		XMFLOAT3(1.0f, 0.0f, 0.0f),
 		XMFLOAT3(0.0f, 0.0f, 0.0f),
 	};
-	D3D11_BUFFER_DESC bd;
-	ZeroMemory(&bd, sizeof(bd));
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(SimpleVertex)* 3;
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.CPUAccessFlags = 0;
-	D3D11_SUBRESOURCE_DATA InitData;
-	ZeroMemory(&InitData, sizeof(InitData));
-	InitData.pSysMem = vertices;
-	hr = device->CreateBuffer(&bd, &InitData, &vertexBuffer);
+
+
+	HRESULT hr = createBuffer(&vertexBuffer, D3D11_BIND_VERTEX_BUFFER, sizeof(SimpleVertex) * 3, vertices);
 	if (FAILED(hr))
 		return hr;
 
@@ -259,18 +366,21 @@ HRESULT initDevice()
 	UINT stride = sizeof(SimpleVertex);
 	UINT offset = 0;
 	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-
-	// Set primitive topology
-	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-
-	return S_OK;
 }
 
-void init()
+void cleanDevice()
 {
-	initWindow(0, SW_SHOW);
-	initDevice();
+#define SAFE_RELEASE(x) if (x) (x)->Release();
+	SAFE_RELEASE(constantBuffer);
+	SAFE_RELEASE(vertexBuffer);
+	SAFE_RELEASE(vertexLayout);
+	SAFE_RELEASE(pixelShader);
+	SAFE_RELEASE(vertexShader);
+	SAFE_RELEASE(renderTargetView);
+	SAFE_RELEASE(swapChain);
+	SAFE_RELEASE(context);
+	SAFE_RELEASE(device);
+
 }
 
 void render()
@@ -284,48 +394,24 @@ void render()
 	// Render a triangle
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
+	context->UpdateSubresource(constantBuffer, 0, 0, &constants, 0, 0);
 	context->Draw(3, 0);
 
-	// Present the information rendered to the back buffer to the front buffer (the screen)
 
-
-	ID3D11Texture2D* pBackBuffer = NULL;
-	HRESULT hr = swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
-	context->Flush();
-
-	{
-		ID3D11Texture2D* debugBuf = NULL;
-		D3D11_TEXTURE2D_DESC desc;
-		ZeroMemory(&desc, sizeof(desc));
-		pBackBuffer->GetDesc(&desc);
-		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		desc.Usage = D3D11_USAGE_STAGING;
-		desc.BindFlags = 0;
-		desc.MiscFlags = 0;
-		device->CreateTexture2D(&desc, NULL, &debugBuf);
-
-		{
-			context->CopyResource(debugBuf, pBackBuffer);
-			D3D11_MAPPED_SUBRESOURCE MappedResource;
-
-
-			context->Map(debugBuf, 0, D3D11_MAP_READ, 0, &MappedResource);
-
-
-			context->Unmap(debugBuf, 0);
-
-
-		}
-		debugBuf->Release();
-	}
 
 	swapChain->Present(0, 0);
 }
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	init();
-
+	if (FAILED(initWindow(0, SW_SHOW)))
+		return 0;
+	if (FAILED(initDevice()) ||
+		FAILED(initGeometry()))
+	{
+		cleanDevice();
+		return 0;
+	}
 	MSG msg = { 0 };
 	while (WM_QUIT != msg.message)
 	{
@@ -339,6 +425,8 @@ int _tmain(int argc, _TCHAR* argv[])
 			render();
 		}
 	}
+
+	cleanDevice();
 	
 	return 0;
 }
