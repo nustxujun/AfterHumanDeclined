@@ -19,6 +19,7 @@ ID3D11VertexShader*     vertexShader = NULL;
 ID3D11PixelShader*      pixelShader = NULL;
 ID3D11InputLayout*      vertexLayout = NULL;
 ID3D11Buffer*           vertexBuffer = NULL;
+ID3D11Buffer*           indexBuffer = NULL;
 ID3D11Buffer*			constantBuffer = NULL;
 
 struct ConstantBuffer
@@ -31,6 +32,7 @@ struct ConstantBuffer
 struct SimpleVertex
 {
 	XMFLOAT3 Pos;
+	XMFLOAT3 Normal;
 };
 
 enum Button
@@ -342,23 +344,43 @@ HRESULT initDevice()
 
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
 
-
-
-	return S_OK;
-}
-
-HRESULT initGeometry()
-{
 	// Create vertex buffer
 	SimpleVertex vertices[] =
 	{
-		XMFLOAT3(0.0f, 1.0f, 0.0f),
-		XMFLOAT3(1.0f, 0.0f, 0.0f),
-		XMFLOAT3(0.0f, 0.0f, 0.0f),
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+
+		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
 	};
 
 
-	HRESULT hr = createBuffer(&vertexBuffer, D3D11_BIND_VERTEX_BUFFER, sizeof(SimpleVertex) * 3, vertices);
+
+	hr = createBuffer(&vertexBuffer, D3D11_BIND_VERTEX_BUFFER, sizeof(SimpleVertex) * 24, vertices);
 	if (FAILED(hr))
 		return hr;
 
@@ -366,6 +388,50 @@ HRESULT initGeometry()
 	UINT stride = sizeof(SimpleVertex);
 	UINT offset = 0;
 	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+
+
+	WORD indices[] =
+	{
+		3, 1, 0,
+		2, 1, 3,
+
+		6, 4, 5,
+		7, 4, 6,
+
+		11, 9, 8,
+		10, 9, 11,
+
+		14, 12, 13,
+		15, 12, 14,
+
+		19, 17, 16,
+		18, 17, 19,
+
+		22, 20, 21,
+		23, 20, 22
+	};
+
+	hr = createBuffer(&indexBuffer, D3D11_BIND_INDEX_BUFFER, sizeof(WORD) * 36, indices);
+	if (FAILED(hr))
+		return hr;
+
+	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R16_UINT, 0);
+
+	return S_OK;
+}
+
+HRESULT initGeometry()
+{
+	Voxelizer v;
+	
+
+
+
+
+
+	return S_OK;
+
+
 }
 
 void cleanDevice()
@@ -373,6 +439,7 @@ void cleanDevice()
 #define SAFE_RELEASE(x) if (x) (x)->Release();
 	SAFE_RELEASE(constantBuffer);
 	SAFE_RELEASE(vertexBuffer);
+	SAFE_RELEASE(indexBuffer);
 	SAFE_RELEASE(vertexLayout);
 	SAFE_RELEASE(pixelShader);
 	SAFE_RELEASE(vertexShader);
@@ -395,7 +462,9 @@ void render()
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
 	context->UpdateSubresource(constantBuffer, 0, 0, &constants, 0, 0);
-	context->Draw(3, 0);
+	
+
+	context->DrawIndexed(36, 0, 0);
 
 
 
