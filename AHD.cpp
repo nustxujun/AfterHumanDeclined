@@ -9,8 +9,6 @@
 
 using namespace AHD;
 
-
-
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
 
@@ -184,7 +182,7 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	size = aabb.getSize() / para.voxelSize;
 	size += Vector3::UNIT_SCALE;
 
-	size_t a = floor(std::max(size.x, std::max(size.y, size.z)));
+	size_t a = (size_t)floor(std::max(size.x, std::max(size.y, size.z)));
 	result.init(size.x, size.y, size.z);
 
 	Interface<ID3D11Device> device;
