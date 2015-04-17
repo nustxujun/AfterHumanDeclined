@@ -53,8 +53,8 @@ VS_OUTPUT VS(float4 Pos : POSITION, float3 Norm: NORMAL)
 //--------------------------------------------------------------------------------------
 float4 PS(VS_OUTPUT input) : SV_Target
 {
-	float4 finalColor = 0;
-	finalColor = saturate(dot((float3)lightdir, input.normal)) ;
+	float4 finalColor = float4(0.3,0.3,0.3,0.3);
+	finalColor += saturate(dot((float3)lightdir, input.normal)) ;
 	finalColor.a = 1;
 	return finalColor;
 }

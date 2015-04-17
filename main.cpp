@@ -102,9 +102,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			switch (wParam)
 			{
 			case K_W: camera.pos += camera.dir; break;
-			case K_A: camera.pos += left; break;
+			case K_A: camera.pos += -left; break;
 			case K_S: camera.pos += -camera.dir; break;
-			case K_D: camera.pos += -left; break;
+			case K_D: camera.pos += left; break;
 
 			}
 		}
@@ -129,15 +129,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				};
 			}wheelpara = { wParam };
 
-			float scale = 1.0f;
-			if (wheelpara.roll > 0)
-				scale *= wheelpara.roll / 100.0f ;
-			else
-				scale /= -wheelpara.roll / 100.0f;
-
-			XMMATRIX s = XMMatrixScaling(scale, scale, scale);
-			constants.world = s * constants.world;
-
+			camera.pos += camera.dir * wheelpara.roll / 10;
 		}
 			break;
 		case WM_MOUSEMOVE:
@@ -566,6 +558,9 @@ HRESULT initGeometry()
 	v.voxelize(voxels, para);
 	std::cout << "Voxelization cost " << (GetTickCount() - timer) << " ms" << std::endl;
 	std::cout << "voxels count : " << voxels.voxels.size();
+
+	constants.world = XMMatrixTranspose(XMMatrixTranslation(-voxels.width , -voxels.height , -voxels.depth ));
+
 
 	return S_OK;
 

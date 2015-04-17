@@ -7,23 +7,38 @@
 
 namespace AHD
 {
+	struct MeshWrapper
+	{
+		const void* vertices = nullptr;
+		size_t vertexCount = 0;
+		size_t vertexStride = 0;
+
+		enum SEMANTIC
+		{
+			POSITION,
+			TEXCOORD,
+
+			NUM
+		};
+
+		size_t elementsOffset[NUM];
+
+		const void* indexes = nullptr;
+		size_t indexCount = 0;
+		size_t indexStride = 0;
+
+
+	};
+
 	class Voxelizer
 	{
 	public:
 		struct Parameter
 		{
-			const void* vertices = nullptr;
-			size_t vertexCount = 0;
-			size_t vertexStride = 0;
-			size_t positionElemOffset = 0;
-			
-			const void* indexes = nullptr;
-			size_t indexCount = 0;
-			size_t indexStride = 0;
-			
+			MeshWrapper mesh;
+
 			float voxelSize = 1.0f;
 			float meshScale = 1.0f;
-
 		};
 
 		struct Voxel
