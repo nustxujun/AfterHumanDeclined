@@ -36,7 +36,7 @@ PS_INPUT vs(VS_INPUT input)
 float4 ps(PS_INPUT input) : SV_Target
 {
 
-	outtest[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = float4(1,1,1,1);
+	outtest[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = float4(input.rPos.x, input.rPos.y, 1, 1);
 	return float4(1, 1, 1, 1);
 }
 

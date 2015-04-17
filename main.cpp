@@ -48,11 +48,24 @@ struct SimpleVertex
 	XMFLOAT3 Normal;
 };
 
+struct Camera
+{
+	XMVECTOR pos;
+	XMVECTOR dir;
+	XMVECTOR up;
+
+	XMMATRIX getMatrix()
+	{
+		XMMATRIX mat = XMMatrixLookToLH(pos, dir, up);
+		return XMMatrixTranspose(mat);
+	}
+}camera;
+
 enum Button
 {
 	MouseLeft,
 	MouseRight,
-
+	MouseMid,
 
 	B_COUNT
 };
@@ -85,24 +98,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		case WM_KEYDOWN:
 		{
-			XMMATRIX tran = XMMatrixIdentity();
+			XMVECTOR left = XMVector3Cross(camera.up, camera.dir);
 			switch (wParam)
 			{
-			case K_W: tran = XMMatrixTranslation(0, 0, -1); break;
-			case K_A: tran = XMMatrixTranslation(1, 0, 0); break;
-			case K_S: tran = XMMatrixTranslation(0, 0, 1); break;
-			case K_D: tran = XMMatrixTranslation(-1, 0, 0); break;
+			case K_W: camera.pos += camera.dir; break;
+			case K_A: camera.pos += left; break;
+			case K_S: camera.pos += -camera.dir; break;
+			case K_D: camera.pos += -left; break;
 
 			}
-
-
-			constants.world = XMMatrixTranspose(tran) * constants.world;
 		}
 			break;
 		case WM_KEYUP:
 			break;
 		case WM_LBUTTONDOWN: mButtonState[MouseLeft] = true; break;
 		case WM_LBUTTONUP: mButtonState[MouseLeft] = false; break;
+		case WM_RBUTTONDOWN: mButtonState[MouseRight] = true; break;
+		case WM_RBUTTONUP: mButtonState[MouseRight] = false; break;
+		case WM_MBUTTONDOWN: mButtonState[MouseMid] = true; break;
+		case WM_MBUTTONUP: mButtonState[MouseMid] = false; break;
 		case WM_MOUSEWHEEL:
 		{
 			union
@@ -141,11 +155,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			static short lastX = mousepos.x;
 			static short lastY = mousepos.y;
 
+			XMVECTOR left = XMVector3Cross(camera.up, camera.dir);
+			XMMATRIX rot1 = XMMatrixRotationAxis(camera.up, (lastX - mousepos.x) / 100.0f);
+			XMMATRIX rot2 = XMMatrixRotationAxis(left, (lastY - mousepos.y) / 100.0f);
+
 			if (mButtonState[MouseLeft])
 			{
-				XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, (lastX - mousepos.x) / 100.0f, 0);
-				constants.world = rot * constants.world;
+				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, (lastX - mousepos.x) / 100.0f, 0);
+				constants.world = rot2 * rot1 * constants.world;
 
+			}
+			else if (mButtonState[MouseRight])
+			{
+				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, , 0);
+				camera.dir = XMVector4Transform(camera.dir, rot2 * rot1);
+			}
+			else if (mButtonState[MouseMid])
+			{
+				XMVECTOR vec = XMLoadFloat4(&constants.lightdir);
+				vec = XMVector4Transform(vec, rot2 * rot1);
+				XMStoreFloat4(&constants.lightdir, vec);
 			}
 
 			lastX = mousepos.x;
@@ -394,16 +423,14 @@ HRESULT initDevice()
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 
-	XMVECTOR Eye = XMVectorSet(0.0, 0, -10.0, 0.0f);
-	XMVECTOR At = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-	XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	camera.pos = XMVectorSet(0.0f, 0.0f, -10.0f, 0.0f);
+	camera.dir = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+	camera.up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	constants.view = camera.getMatrix();
 	constants.world = XMMatrixIdentity();
-	constants.view = XMMatrixLookAtLH(Eye, At, Up);
-	constants.view = XMMatrixTranspose(constants.view);
 	constants.proj = XMMatrixPerspectiveFovLH(XM_PIDIV4, width / (FLOAT)height, 0.01f, 1000.0f);
 	constants.proj = XMMatrixTranspose(constants.proj);
 	constants.lightdir = XMFLOAT4(0, 0, -1, 0);
-
 
 
 	hr = createBuffer(&constantBuffer, D3D11_BIND_CONSTANT_BUFFER, sizeof(constants), &constants);
@@ -532,13 +559,13 @@ HRESULT initGeometry()
 	para.indexStride = 2;
 	para.indexes = &indexs[0];
 	para.voxelSize = 1.0f;
-	para.meshScale = 4;
+	para.meshScale = 10;
 
 
 	long timer = GetTickCount();
 	v.voxelize(voxels, para);
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
-	std::cout << "voxels count : " << voxels.width * voxels.height * voxels.depth;
+	std::cout << "voxels count : " << voxels.voxels.size();
 
 	return S_OK;
 
@@ -571,35 +598,20 @@ void render()
 	context->ClearRenderTargetView(renderTargetView, ClearColor);
 	context->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
+	constants.view = camera.getMatrix();
 	context->UpdateSubresource(constantBuffer, 0, NULL, &constants, 0, 0);
 
 
-	// Render a triangle
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
-	
-	int count = voxels.width * voxels.height * voxels.depth;
-	for (int z = 0; z < voxels.depth; ++z)
+
+	for (auto& i : voxels.voxels)
 	{
-		for (int y = 0; y < voxels.height; ++y)
-		{
-			for (int x = 0; x < voxels.width; ++x)
-			{
-				Voxelizer::Result::ARGB c = voxels.getColor(x, y, z);
-				if (c == 0)
-					continue;
-				//variables.color = XMFLOAT4(1,1,0,1);
-				variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2, y * 2, z * 2));
-				context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
-				context->DrawIndexed(36, 0, 0);
-
-			}
-		}
+		variables.local = XMMatrixTranspose(XMMatrixTranslation(i.pos.x * 2, i.pos.y * 2, i.pos.z * 2));
+		context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
+		context->DrawIndexed(36, 0, 0);
 	}
-
-
-
-
+	
 	swapChain->Present(0, 0);
 }
 

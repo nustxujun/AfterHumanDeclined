@@ -3,6 +3,7 @@
 
 #include <d3d11.h>
 #include <D3DX11.h>
+#include <vector>
 
 namespace AHD
 {
@@ -25,61 +26,27 @@ namespace AHD
 
 		};
 
+		struct Voxel
+		{
+			struct
+			{
+				int x;
+				int y;
+				int z;
+			} pos;
+
+			struct
+			{
+				float u;
+				float v;
+			}texcoord;
+
+		};
+
 		struct Result
 		{
-			typedef unsigned int ARGB;
-			ARGB* voxels = nullptr;
+			std::vector<Voxel> voxels;
 			int width, height, depth;
-
-			void init(int w, int h, int d)
-			{
-				clean();
-
-				width = w;
-				height = h;
-				depth = d;
-
-				voxels = new ARGB[w * h * d]();
-			}
-
-			int getIndex(int x, int y, int z)
-			{
-				return x + y * width + z * width * height;
-			}
-
-			ARGB getColor(int x, int y, int z)
-			{
-				return getColor(getIndex(x,y,z));
-			}
-
-			ARGB getColor(int index)
-			{
-				return voxels[index];
-			}
-
-			void setColor(ARGB c, int x, int y, int z)
-			{
-				setColor(c, getIndex(x, y, z));
-			}
-
-			void setColor(ARGB c, int index)
-			{
-				voxels[index] = c;
-			}
-
-			void clean()
-			{
-				if (voxels != nullptr)
-					delete voxels;
-				voxels = nullptr;
-			}
-
-			~Result()
-			{
-				clean();
-			}
-
-			
 		};
 	public :
 		void voxelize(Result& output, const Parameter& p);

@@ -35,7 +35,7 @@ HRESULT Voxelizer::createDevice(ID3D11Device** device, ID3D11DeviceContext** con
 
 HRESULT Voxelizer::createUAV(ID3D11Texture3D** buffer, ID3D11UnorderedAccessView** uav, ID3D11Device* device, int width, int height, int depth)
 {
-	DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	DXGI_FORMAT format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 
 	D3D11_TEXTURE3D_DESC TextureData;
 	ZeroMemory(&TextureData, sizeof(TextureData));
@@ -185,8 +185,11 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	int height = std::floor(size.y);
 	int depth = std::floor(size.z);
 
+	result.width = width;
+	result.height = height;
+	result.depth = depth;
+
 	int length = std::max(width, std::max(height, depth));
-	result.init(width, height, depth);
 
 	Interface<ID3D11Device> device;
 	Interface<ID3D11DeviceContext> context;
@@ -286,7 +289,7 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		desc.MultisampleEnable = false;
 		desc.AntialiasedLineEnable = false;
 
-		device->CreateRasterizerState(&desc, &rasterizerState);
+		CHECK_RESULT(device->CreateRasterizerState(&desc, &rasterizerState), "fail to create rasterizer state,  cant use gpu voxelizer");
 		context->RSSetState(rasterizerState);
 	}
 
@@ -375,9 +378,12 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 				for (int x = 0; x < width; ++x)
 				{
 					if (*begin != 0)
-						result.setColor(*begin, x, y, z);
+					{
+						Voxel v = { x, y, z, begin[0], begin[1] };
+						result.voxels.push_back(v);
+					}
 
-					++begin;
+					begin += 4;
 				}
 			}
 		}
