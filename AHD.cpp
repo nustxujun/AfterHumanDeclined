@@ -181,9 +181,12 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	aabb.setExtents(Vector3::ZERO, size);
 	size = aabb.getSize() / para.voxelSize;
 	size += Vector3::UNIT_SCALE;
+	int width = std::floor(size.x);
+	int height = std::floor(size.y);
+	int depth = std::floor(size.z);
 
-	size_t a = (size_t)floor(std::max(size.x, std::max(size.y, size.z)));
-	result.init(size.x, size.y, size.z);
+	int length = std::max(width, std::max(height, depth));
+	result.init(width, height, depth);
 
 	Interface<ID3D11Device> device;
 	Interface<ID3D11DeviceContext> context;
@@ -193,12 +196,12 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 
 	Interface<ID3D11Texture3D> output;
 	Interface<ID3D11UnorderedAccessView> outputUAV;
-	hr = createUAV(&output, &outputUAV, device, size.x, size.y, size.z);
+	hr = createUAV(&output, &outputUAV, device, width, height, depth);
 
 
 	Interface<ID3D11Texture2D> rendertarget;
 	Interface<ID3D11RenderTargetView> rendertargetview;
-	hr = createRenderTarget(&rendertarget, &rendertargetview, device, size.x, size.y);
+	hr = createRenderTarget(&rendertarget, &rendertargetview, device, length, length);
 
 	context->OMSetRenderTargetsAndUnorderedAccessViews(1, &rendertargetview, NULL, 1, 1, &outputUAV, NULL);
 
@@ -261,7 +264,7 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	parameters.view = XMMatrixLookAtLH(Eye, At, Up);
 	parameters.view = XMMatrixTranspose(parameters.view);
-	parameters.proj = XMMatrixOrthographicOffCenterLH(0, size.x, 0, size.y, 0, size.z);
+	parameters.proj = XMMatrixOrthographicOffCenterLH(0, length, 0, length, 0, length);
 	parameters.proj = XMMatrixTranspose(parameters.proj);
 
 
@@ -269,9 +272,29 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	CHECK_RESULT(createBuffer(&constantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(parameters), &parameters), "fail to create constant buffer,  cant use gpu voxelizer");
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
 
+	Interface<ID3D11RasterizerState> rasterizerState;
+	{
+		D3D11_RASTERIZER_DESC desc;
+		desc.FillMode = D3D11_FILL_SOLID;
+		desc.CullMode = D3D11_CULL_NONE;
+		desc.FrontCounterClockwise = false;
+		desc.DepthBias = 0;
+		desc.DepthBiasClamp = 0;
+		desc.SlopeScaledDepthBias = 0;
+		desc.DepthClipEnable = true;
+		desc.ScissorEnable = false;
+		desc.MultisampleEnable = false;
+		desc.AntialiasedLineEnable = false;
+
+		device->CreateRasterizerState(&desc, &rasterizerState);
+		context->RSSetState(rasterizerState);
+	}
+
+
+
 	D3D11_VIEWPORT vp;
-	vp.Width = (FLOAT)size.x;
-	vp.Height = (FLOAT)size.y;
+	vp.Width = (FLOAT)length;
+	vp.Height = (FLOAT)length;
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
 	vp.TopLeftX = 0;
@@ -283,28 +306,20 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	{
 		Vector3 eye;
 		Vector3 at;
+		Vector3 up;
 	};
 	ViewPara views[] =
 	{
-		Vector3::ZERO, Vector3::UNIT_Z * a,
-		Vector3::UNIT_X * a, Vector3::ZERO,
-		Vector3(a, 0, a), Vector3::UNIT_X * a,
-		Vector3::UNIT_Z * a, Vector3(a, 0, a),
+		Vector3::ZERO, Vector3::UNIT_Z * length, Vector3::UNIT_Y,
+		Vector3::UNIT_X * length, Vector3::ZERO, Vector3::UNIT_Y,
+		Vector3::UNIT_Y * length, Vector3::ZERO, Vector3::UNIT_Z,
 	};
 
 	for (ViewPara& v : views)
 	{
-
-		//Interface<ID3D11DepthStencilState> depthState;
-		//D3D11_DEPTH_STENCIL_DESC dsdesc;
-		//ZeroMemory(&dsdesc, sizeof(dsdesc));
-		//dsdesc.DepthEnable = FALSE;
-		//device->CreateDepthStencilState(&dsdesc, &depthState);
-		//context->OMSetDepthStencilState(depthState, 0);
-
 		XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
 		XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
-		XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+		XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
 		parameters.view = XMMatrixLookAtLH(Eye, At, Up);
 		parameters.view = XMMatrixTranspose(parameters.view);
 		context->UpdateSubresource(constantBuffer, 0, NULL, &parameters, 0, 0);
@@ -351,13 +366,13 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 
 		//buffer大小并不严格遵循申请大小，计算每一块的位置时 每一块的地址 需要 rowpitch 和 depthpitch来计算
 		//比如2 x 4 x 1的buffer 可能会给出 4 x 4 x UNKNOWN ，具体为什么不知道
-		for (int z = 0; z < size.z; ++z)
+		for (int z = 0; z < depth; ++z)
 		{
 			const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-			for (int y = 0; y < size.y; ++y)
+			for (int y = 0; y < height; ++y)
 			{
 				const int* begin = (const int*)(depth + mr.RowPitch * y);
-				for (int x = 0; x < size.x; ++x)
+				for (int x = 0; x < width; ++x)
 				{
 					if (*begin != 0)
 						result.setColor(*begin, x, y, z);

@@ -4,6 +4,7 @@
 #include <d3dx11.h>
 #include <d3dcompiler.h>
 #include <xnamath.h>
+#include <iostream>
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -55,6 +56,14 @@ enum Button
 
 bool mButtonState[B_COUNT] = {false};
 
+enum Key
+{
+	K_W = 87,
+	K_A = 65,
+	K_S = 83,
+	K_D = 68,
+};
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -71,7 +80,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			break;
+		case WM_KEYDOWN:
+		{
+			XMMATRIX tran = XMMatrixIdentity();
+			switch (wParam)
+			{
+			case K_W: tran = XMMatrixTranslation(0, 0, 1); break;
+			case K_A: tran = XMMatrixTranslation(1, 0, 0); break;
+			case K_S: tran = XMMatrixTranslation(0, 0,-1); break;
+			case K_D: tran = XMMatrixTranslation(-1, 0, 0); break;
 
+			}
+
+
+			constants.world = XMMatrixTranspose(tran) * constants.world;
+		}
+			break;
+		case WM_KEYUP:
+			break;
 		case WM_LBUTTONDOWN: mButtonState[MouseLeft] = true; break;
 		case WM_LBUTTONUP: mButtonState[MouseLeft] = false; break;
 		case WM_MOUSEWHEEL:
@@ -114,7 +140,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			if (mButtonState[MouseLeft])
 			{
-				XMMATRIX rot = XMMatrixRotationRollPitchYaw((mousepos.y - lastY) / 100.0f, (mousepos.x - lastX) / 100.0f, 0);
+				XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, (lastX - mousepos.x) / 100.0f, 0);
 				constants.world = rot * constants.world;
 
 			}
@@ -472,10 +498,13 @@ HRESULT initGeometry()
 	para.indexStride = 2;
 	para.indexes = &indexs[0];
 	para.voxelSize = 1.0f;
-	para.meshScale = 25.0f;
+	para.meshScale = 10;
 
+
+	long timer = GetTickCount();
 	v.voxelize(voxels, para);
-
+	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
+	std::cout << "voxels count : " << voxels.width * voxels.height * voxels.depth;
 
 	return S_OK;
 
