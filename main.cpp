@@ -23,6 +23,9 @@ ID3D11Buffer*           vertexBuffer = NULL;
 ID3D11Buffer*           indexBuffer = NULL;
 ID3D11Buffer*			constantBuffer = NULL;
 ID3D11Buffer*			variableBuffer = NULL;
+ID3D11Texture2D*        depthStencil = NULL;
+ID3D11DepthStencilView* depthStencilView = NULL;
+
 Voxelizer::Result		voxels;
 
 struct ConstantBuffer
@@ -85,9 +88,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			XMMATRIX tran = XMMatrixIdentity();
 			switch (wParam)
 			{
-			case K_W: tran = XMMatrixTranslation(0, 0, 1); break;
+			case K_W: tran = XMMatrixTranslation(0, 0, -1); break;
 			case K_A: tran = XMMatrixTranslation(1, 0, 0); break;
-			case K_S: tran = XMMatrixTranslation(0, 0,-1); break;
+			case K_S: tran = XMMatrixTranslation(0, 0, 1); break;
 			case K_D: tran = XMMatrixTranslation(-1, 0, 0); break;
 
 			}
@@ -293,7 +296,35 @@ HRESULT initDevice()
 	if (FAILED(hr))
 		return hr;
 
-	context->OMSetRenderTargets(1, &renderTargetView, NULL);
+	// Create depth stencil texture
+	D3D11_TEXTURE2D_DESC descDepth;
+	ZeroMemory(&descDepth, sizeof(descDepth));
+	descDepth.Width = width;
+	descDepth.Height = height;
+	descDepth.MipLevels = 1;
+	descDepth.ArraySize = 1;
+	descDepth.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	descDepth.SampleDesc.Count = 1;
+	descDepth.SampleDesc.Quality = 0;
+	descDepth.Usage = D3D11_USAGE_DEFAULT;
+	descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	descDepth.CPUAccessFlags = 0;
+	descDepth.MiscFlags = 0;
+	hr = device->CreateTexture2D(&descDepth, NULL, &depthStencil);
+	if (FAILED(hr))
+		return hr;
+
+	// Create the depth stencil view
+	D3D11_DEPTH_STENCIL_VIEW_DESC descDSV;
+	ZeroMemory(&descDSV, sizeof(descDSV));
+	descDSV.Format = descDepth.Format;
+	descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	descDSV.Texture2D.MipSlice = 0;
+	hr = device->CreateDepthStencilView(depthStencil, &descDSV, &depthStencilView);
+	if (FAILED(hr))
+		return hr;
+
+	context->OMSetRenderTargets(1, &renderTargetView, depthStencilView);
 
 	// Setup the viewport
 	D3D11_VIEWPORT vp;
@@ -327,6 +358,7 @@ HRESULT initDevice()
 	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 	};
 	UINT numElements = ARRAYSIZE(layout);
 
@@ -370,6 +402,7 @@ HRESULT initDevice()
 	constants.view = XMMatrixTranspose(constants.view);
 	constants.proj = XMMatrixPerspectiveFovLH(XM_PIDIV4, width / (FLOAT)height, 0.01f, 1000.0f);
 	constants.proj = XMMatrixTranspose(constants.proj);
+	constants.lightdir = XMFLOAT4(0, 0, -1, 0);
 
 
 
@@ -384,6 +417,7 @@ HRESULT initDevice()
 
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
 	context->VSSetConstantBuffers(1, 1, &variableBuffer);
+	context->PSSetConstantBuffers(0, 1, &constantBuffer);
 
 	// Create vertex buffer
 	SimpleVertex vertices[] =
@@ -498,7 +532,7 @@ HRESULT initGeometry()
 	para.indexStride = 2;
 	para.indexes = &indexs[0];
 	para.voxelSize = 1.0f;
-	para.meshScale = 10;
+	para.meshScale = 4;
 
 
 	long timer = GetTickCount();
@@ -514,6 +548,8 @@ HRESULT initGeometry()
 void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
+	SAFE_RELEASE(depthStencil);
+	SAFE_RELEASE(depthStencilView);
 	SAFE_RELEASE(variableBuffer);
 	SAFE_RELEASE(constantBuffer);
 	SAFE_RELEASE(vertexBuffer);
@@ -533,6 +569,7 @@ void render()
 	// Clear the back buffer 
 	float ClearColor[4] = { 0.0f, 0.125f, 0.3f, 1.0f }; // red,green,blue,alpha
 	context->ClearRenderTargetView(renderTargetView, ClearColor);
+	context->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
 	context->UpdateSubresource(constantBuffer, 0, NULL, &constants, 0, 0);
 
@@ -551,7 +588,7 @@ void render()
 				Voxelizer::Result::ARGB c = voxels.getColor(x, y, z);
 				if (c == 0)
 					continue;
-				//variables.color = c;
+				//variables.color = XMFLOAT4(1,1,0,1);
 				variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2, y * 2, z * 2));
 				context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
 				context->DrawIndexed(36, 0, 0);

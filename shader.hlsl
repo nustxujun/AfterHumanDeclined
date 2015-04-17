@@ -9,6 +9,7 @@ struct VS_OUTPUT
 {
 	float4 pos :SV_POSITION;
 	float4 color: COLOR0;
+	float3 normal :TEXCOORD0;
 };
 
 cbuffer cbNeverChanges : register(b0)
@@ -28,7 +29,7 @@ cbuffer cbVariable: register(b1)
 //--------------------------------------------------------------------------------------
 // Vertex Shader
 //--------------------------------------------------------------------------------------
-VS_OUTPUT VS(float4 Pos : POSITION) 
+VS_OUTPUT VS(float4 Pos : POSITION, float3 Norm: NORMAL) 
 {
 	VS_OUTPUT o;   
 	o.pos = mul(Pos, local);
@@ -37,6 +38,10 @@ VS_OUTPUT VS(float4 Pos : POSITION)
 	o.pos = mul(o.pos, Projection);
 
 	o.color = color;
+
+	o.normal = mul(Norm, local); 
+	o.normal = mul(o.normal, World);
+	o.normal = normalize(o.normal);
     return o;
 }
 
@@ -48,6 +53,9 @@ VS_OUTPUT VS(float4 Pos : POSITION)
 //--------------------------------------------------------------------------------------
 float4 PS(VS_OUTPUT input) : SV_Target
 {
-	return input.color;   
+	float4 finalColor = 0;
+	finalColor = saturate(dot((float3)lightdir, input.normal)) ;
+	finalColor.a = 1;
+	return finalColor;
 }
 
