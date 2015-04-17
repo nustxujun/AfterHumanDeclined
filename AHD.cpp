@@ -23,7 +23,11 @@ HRESULT Voxelizer::createDevice(ID3D11Device** device, ID3D11DeviceContext** con
 		NULL,
 		D3D_DRIVER_TYPE_HARDWARE,
 		NULL,
-		D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_DEBUG,
+		D3D11_CREATE_DEVICE_SINGLETHREADED 
+#ifdef _DEBUG
+		| D3D11_CREATE_DEVICE_DEBUG
+#endif
+		,
 		NULL,
 		0,
 		D3D11_SDK_VERSION,
@@ -119,7 +123,11 @@ HRESULT Voxelizer::compileShader(ID3DBlob** out, const char* filename, const cha
 		NULL,
 		function,
 		profile,
-		D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_DEBUG,
+		D3DCOMPILE_ENABLE_STRICTNESS
+#ifdef _DEBUG
+		| D3DCOMPILE_DEBUG
+#endif
+		,
 		0,
 		NULL,
 		&ret,
@@ -130,8 +138,8 @@ HRESULT Voxelizer::compileShader(ID3DBlob** out, const char* filename, const cha
 
 	if (error)
 	{
-
-		EXCEPT(((char*)error->GetBufferPointer()));
+		OutputDebugStringA((char*)error->GetBufferPointer());
+		error->Release();
 	}
 
 	return hr;
@@ -155,7 +163,8 @@ HRESULT Voxelizer::createBuffer(ID3D11Buffer** buffer, ID3D11Device* device, D3D
 void Voxelizer::voxelize(Result& result, const Parameter& para)
 {
 	AABB aabb;
-	std::vector<Vector3> verts;
+
+	//calculate the max size
 	size_t buffersize = para.vertexCount * para.vertexStride;
 	{
 		const char* begin = (const char*)para.vertices;
@@ -164,19 +173,12 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		{
 			Vector3 v = (*(const Vector3*)begin) * para.meshScale;
 			aabb.merge(v);
-			verts.push_back(v);
 		}
 	}
 
 
 	Vector3 size = aabb.getSize();
 	Vector3 tran = -aabb.getMin();
-	//close to zero
-	for (auto& i : verts)
-	{
-		i += tran;
-	}
-
 
 	aabb.setExtents(Vector3::ZERO, size);
 	size = aabb.getSize() / para.voxelSize;
@@ -230,8 +232,8 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		context->PSSetShader(pixelShader, NULL, 0);
 	}
 	Interface<ID3D11Buffer> vertexBuffer;
-	CHECK_RESULT(createBuffer(&vertexBuffer, device, D3D11_BIND_VERTEX_BUFFER, para.vertexCount * sizeof(Vector3), &verts[0]), "fail to create vertex buffer,  cant use gpu voxelizer");
-	UINT stride = sizeof(Vector3);
+	CHECK_RESULT(createBuffer(&vertexBuffer, device, D3D11_BIND_VERTEX_BUFFER, para.vertexCount * para.vertexStride, para.vertices), "fail to create vertex buffer,  cant use gpu voxelizer");
+	UINT stride = para.vertexStride;
 	UINT offset = 0;
 	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -241,7 +243,6 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	if (useIndex)
 	{
 		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.indexCount * para.indexStride, para.indexes), "fail to create index buffer,  cant use gpu voxelizer");
-
 
 		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
 		switch (para.indexStride)
@@ -259,9 +260,14 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	Interface<ID3D11Buffer> constantBuffer;
 	struct ConstantBuffer
 	{
+		XMMATRIX world;
 		XMMATRIX view;
 		XMMATRIX proj;
 	} parameters;
+	// all the vertices pos.xyz will move above zero
+	// the render range is (length, length, length)
+	parameters.world = XMMatrixTranspose(XMMatrixTranslation(tran.x, tran.y, tran.z)) *
+		XMMatrixScaling(para.meshScale, para.meshScale, para.meshScale);
 	XMVECTOR Eye = XMVectorSet(0.0, 0, -0.0, 0.0f);
 	XMVECTOR At = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 	XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
@@ -275,6 +281,8 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	CHECK_RESULT(createBuffer(&constantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(parameters), &parameters), "fail to create constant buffer,  cant use gpu voxelizer");
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
 
+
+	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
 	{
 		D3D11_RASTERIZER_DESC desc;
@@ -311,6 +319,9 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		Vector3 at;
 		Vector3 up;
 	};
+
+
+	//we need to render 3 times from different views
 	ViewPara views[] =
 	{
 		Vector3::ZERO, Vector3::UNIT_Z * length, Vector3::UNIT_Y,
@@ -367,8 +378,6 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		D3D11_MAPPED_SUBRESOURCE mr;
 		context->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
 
-		//buffer大小并不严格遵循申请大小，计算每一块的位置时 每一块的地址 需要 rowpitch 和 depthpitch来计算
-		//比如2 x 4 x 1的buffer 可能会给出 4 x 4 x UNKNOWN ，具体为什么不知道
 		for (int z = 0; z < depth; ++z)
 		{
 			const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
