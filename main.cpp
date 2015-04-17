@@ -564,7 +564,7 @@ HRESULT initGeometry()
 
 	long timer = GetTickCount();
 	v.voxelize(voxels, para);
-	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
+	std::cout << "Voxelization cost " << (GetTickCount() - timer) << " ms" << std::endl;
 	std::cout << "voxels count : " << voxels.voxels.size();
 
 	return S_OK;

@@ -344,26 +344,6 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		else
 			context->Draw(para.vertexCount, 0);
 
-#ifdef  _DEBUG
-		{
-			Interface<ID3D11Texture2D> debug;
-			D3D11_TEXTURE2D_DESC desc;
-			rendertarget->GetDesc(&desc);
-			desc.BindFlags = 0;
-			desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-			desc.MiscFlags = 0;
-			desc.Usage = D3D11_USAGE_STAGING;
-
-			device->CreateTexture2D(&desc, NULL, &debug);
-			context->CopyResource(debug, rendertarget);
-
-			D3D11_MAPPED_SUBRESOURCE mr;
-			context->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
-			context->Unmap(debug, 0);
-		}
-#endif
-
-
 		Interface<ID3D11Texture3D> debug = NULL;
 		D3D11_TEXTURE3D_DESC dsDesc;
 		output->GetDesc(&dsDesc);
