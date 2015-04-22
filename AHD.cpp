@@ -113,13 +113,13 @@ HRESULT Voxelizer::createDepthStencil(ID3D11Texture2D** ds, ID3D11DepthStencilVi
 	return hr;
 }
 
-HRESULT Voxelizer::compileShader(ID3DBlob** out, const char* filename, const char* function, const char* profile)
+HRESULT Voxelizer::compileShader(ID3DBlob** out, const char* filename, const char* function, const char* profile, const D3D10_SHADER_MACRO* macros)
 {
 	ID3DBlob* ret = NULL;
 	ID3DBlob* error = NULL;
 	HRESULT hr = D3DX11CompileFromFileA(
 		filename,
-		NULL,
+		macros,
 		NULL,
 		function,
 		profile,
@@ -165,11 +165,11 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	AABB aabb;
 
 	//calculate the max size
-	size_t buffersize = para.vertexCount * para.vertexStride;
+	size_t buffersize = para.mesh.vertexCount * para.mesh.vertexStride;
 	{
-		const char* begin = (const char*)para.vertices;
+		const char* begin = (const char*)para.mesh.vertices;
 		const char* end = begin + buffersize;
-		for (; begin != end; begin += para.vertexStride)
+		for (; begin != end; begin += para.mesh.vertexStride)
 		{
 			Vector3 v = (*(const Vector3*)begin) * para.meshScale;
 			aabb.merge(v);
@@ -207,18 +207,42 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	Interface<ID3D11Texture2D> rendertarget;
 	Interface<ID3D11RenderTargetView> rendertargetview;
 	hr = createRenderTarget(&rendertarget, &rendertargetview, device, length, length);
-
 	context->OMSetRenderTargetsAndUnorderedAccessViews(1, &rendertargetview, NULL, 1, 1, &outputUAV, NULL);
 
 	Interface<ID3D11InputLayout> layout;
 	Interface<ID3D11VertexShader> vertexShader;
 	Interface<ID3D11PixelShader> pixelShader;
+
+	D3D10_SHADER_MACRO macros[] = { { "HAS_TEXCOORD", "1" }, {0,0} };
+	bool hasTexcoord = false;
 	{
+		D3D11_INPUT_ELEMENT_DESC desc[2] = { 0 };
+		if (para.mesh.desc != nullptr && para.mesh.descCount != 0)
+		{
+			for (int i = 0; i < para.mesh.descCount; ++i)
+			{
+				if (para.mesh.desc[i].SemanticName == std::string("POSITION"))
+				{
+					desc[0] = para.mesh.desc[i];
+				}
+				else if (para.mesh.desc[i].SemanticName == std::string("TEXCOORD") &&
+						 para.mesh.desc[i].SemanticIndex == 0)
+				{
+					desc[1] = para.mesh.desc[i];
+					hasTexcoord = true;
+				}
+			}
+		}
+		
+		if (desc[0].SemanticName == nullptr)
+		{
+			desc[0] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+		}
+		
 		Interface<ID3DBlob> blob;
-		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "vs", "vs_5_0"), "fail to compile vertex shader, cant use gpu voxelizer");
+		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "vs", "vs_5_0", hasTexcoord ? macros : NULL), "fail to compile vertex shader, cant use gpu voxelizer");
+		CHECK_RESULT(device->CreateInputLayout(desc, hasTexcoord?2:1, blob->GetBufferPointer(), blob->GetBufferSize(), &layout), "fail to create layout,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &vertexShader), "fail to create vertex shader,  cant use gpu voxelizer");
-		D3D11_INPUT_ELEMENT_DESC desc[] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
-		CHECK_RESULT(device->CreateInputLayout(desc, 1, blob->GetBufferPointer(), blob->GetBufferSize(), &layout), "fail to create layout,  cant use gpu voxelizer");
 
 		context->VSSetShader(vertexShader, NULL, 0);
 		context->IASetInputLayout(layout);
@@ -226,26 +250,26 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	}
 	{
 		Interface<ID3DBlob> blob;
-		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "ps", "ps_5_0"), "fail to compile pixel shader,  cant use gpu voxelizer");
+		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "ps", "ps_5_0", hasTexcoord ? macros : NULL), "fail to compile pixel shader,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &pixelShader), "fail to create pixel shader, cant use gpu voxelizer");
 
 		context->PSSetShader(pixelShader, NULL, 0);
 	}
 	Interface<ID3D11Buffer> vertexBuffer;
-	CHECK_RESULT(createBuffer(&vertexBuffer, device, D3D11_BIND_VERTEX_BUFFER, para.vertexCount * para.vertexStride, para.vertices), "fail to create vertex buffer,  cant use gpu voxelizer");
-	UINT stride = para.vertexStride;
+	CHECK_RESULT(createBuffer(&vertexBuffer, device, D3D11_BIND_VERTEX_BUFFER, para.mesh.vertexCount * para.mesh.vertexStride, para.mesh.vertices), "fail to create vertex buffer,  cant use gpu voxelizer");
+	UINT stride = para.mesh.vertexStride;
 	UINT offset = 0;
 	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	Interface<ID3D11Buffer> indexBuffer;
-	bool useIndex = para.indexCount != 0 && para.indexes != nullptr && para.indexStride != 0;
+	bool useIndex = para.mesh.indexCount != 0 && para.mesh.indexes != nullptr && para.mesh.indexStride != 0;
 	if (useIndex)
 	{
-		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.indexCount * para.indexStride, para.indexes), "fail to create index buffer,  cant use gpu voxelizer");
+		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.mesh.indexCount * para.mesh.indexStride, para.mesh.indexes), "fail to create index buffer,  cant use gpu voxelizer");
 
 		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
-		switch (para.indexStride)
+		switch (para.mesh.indexStride)
 		{
 			case 2: format = DXGI_FORMAT_R16_UINT; break;
 			case 4: format = DXGI_FORMAT_R32_UINT; break;
@@ -265,7 +289,7 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		XMMATRIX proj;
 	} parameters;
 	// all the vertices pos.xyz will move above zero
-	// the render range is (length, length, length)
+	// the render range is (0,0,0) to (length, length, length)
 	parameters.world = XMMatrixTranspose(XMMatrixTranslation(tran.x, tran.y, tran.z)) *
 		XMMatrixScaling(para.meshScale, para.meshScale, para.meshScale);
 	XMVECTOR Eye = XMVectorSet(0.0, 0, -0.0, 0.0f);
@@ -320,64 +344,73 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		Vector3 up;
 	};
 
-
-	//we need to render 3 times from different views
-	ViewPara views[] =
+	for (auto sub : para.mesh.subs)
 	{
-		Vector3::ZERO, Vector3::UNIT_Z * length, Vector3::UNIT_Y,
-		Vector3::UNIT_X * length, Vector3::ZERO, Vector3::UNIT_Y,
-		Vector3::UNIT_Y * length, Vector3::ZERO, Vector3::UNIT_Z,
-	};
+		//uav is our real rendertarget
+		UINT initcolor[4] = { 0 };
+		context->ClearUnorderedAccessViewUint(outputUAV, initcolor);
 
-	for (ViewPara& v : views)
-	{
-		XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
-		XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
-		XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
-		parameters.view = XMMatrixLookAtLH(Eye, At, Up);
-		parameters.view = XMMatrixTranspose(parameters.view);
-		context->UpdateSubresource(constantBuffer, 0, NULL, &parameters, 0, 0);
-
-
-		if (useIndex)
-			context->DrawIndexed(para.indexCount, 0, 0);
-		else
-			context->Draw(para.vertexCount, 0);
-
-		Interface<ID3D11Texture3D> debug = NULL;
-		D3D11_TEXTURE3D_DESC dsDesc;
-		output->GetDesc(&dsDesc);
-		dsDesc.BindFlags = 0;
-		dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		dsDesc.MiscFlags = 0;
-		dsDesc.Usage = D3D11_USAGE_STAGING;
-
-		CHECK_RESULT(device->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
-
-		context->CopyResource(debug, output);
-		D3D11_MAPPED_SUBRESOURCE mr;
-		context->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
-
-		for (int z = 0; z < depth; ++z)
+		result.subs.push_back(Result::Sub());
+		auto& retsub = result.subs.back();
+		//we need to render 3 times from different views
+		ViewPara views[] =
 		{
-			const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-			for (int y = 0; y < height; ++y)
-			{
-				const int* begin = (const int*)(depth + mr.RowPitch * y);
-				for (int x = 0; x < width; ++x)
-				{
-					if (*begin != 0)
-					{
-						Voxel v = { x, y, z, begin[0], begin[1] };
-						result.voxels.push_back(v);
-					}
+			Vector3::ZERO, Vector3::UNIT_Z * length, Vector3::UNIT_Y,
+			Vector3::UNIT_X * length, Vector3::ZERO, Vector3::UNIT_Y,
+			Vector3::UNIT_Y * length, Vector3::ZERO, Vector3::UNIT_Z,
+		};
 
-					begin += 4;
+		for (ViewPara& v : views)
+		{
+			XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
+			XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
+			XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
+			parameters.view = XMMatrixLookAtLH(Eye, At, Up);
+			parameters.view = XMMatrixTranspose(parameters.view);
+			context->UpdateSubresource(constantBuffer, 0, NULL, &parameters, 0, 0);
+
+
+			if (useIndex)
+				context->DrawIndexed(sub.count, sub.offset, 0);
+			else
+				context->Draw(sub.count, sub.offset);
+
+			Interface<ID3D11Texture3D> debug = NULL;
+			D3D11_TEXTURE3D_DESC dsDesc;
+			output->GetDesc(&dsDesc);
+			dsDesc.BindFlags = 0;
+			dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			dsDesc.MiscFlags = 0;
+			dsDesc.Usage = D3D11_USAGE_STAGING;
+
+			CHECK_RESULT(device->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
+
+			context->CopyResource(debug, output);
+			D3D11_MAPPED_SUBRESOURCE mr;
+			context->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
+
+			for (int z = 0; z < depth; ++z)
+			{
+				const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
+				for (int y = 0; y < height; ++y)
+				{
+					const float* begin = (const float*)(depth + mr.RowPitch * y);
+					for (int x = 0; x < width; ++x)
+					{
+						if (begin[2] != 0)
+						{
+							Voxel v = { x, y, z, begin[0], begin[1] };
+							retsub.voxels.push_back(v);
+						}
+
+						begin += 4;
+					}
 				}
 			}
+
+			context->Unmap(debug, 0);
 		}
 
-		context->Unmap(debug, 0);
 	}
 
 	

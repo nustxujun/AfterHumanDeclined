@@ -4,6 +4,7 @@
 #include <d3d11.h>
 #include <D3DX11.h>
 #include <vector>
+#include <string>
 
 namespace AHD
 {
@@ -13,21 +14,20 @@ namespace AHD
 		size_t vertexCount = 0;
 		size_t vertexStride = 0;
 
-		enum SEMANTIC
-		{
-			POSITION,
-			TEXCOORD,
-
-			NUM
-		};
-
-		size_t elementsOffset[NUM];
-
 		const void* indexes = nullptr;
 		size_t indexCount = 0;
 		size_t indexStride = 0;
 
+		D3D11_INPUT_ELEMENT_DESC* desc = nullptr;
+		size_t descCount = 0;
 
+		struct Sub
+		{
+			size_t offset;
+			size_t count;
+		};
+
+		std::vector<Sub> subs;
 	};
 
 	class Voxelizer
@@ -60,8 +60,15 @@ namespace AHD
 
 		struct Result
 		{
-			std::vector<Voxel> voxels;
+			typedef std::vector<Voxel> VoxelList;
+			struct Sub
+			{
+				VoxelList voxels;
+			};
+			
+			std::vector<Sub> subs;
 			int width, height, depth;
+
 		};
 	public :
 		void voxelize(Result& output, const Parameter& p);
@@ -89,7 +96,7 @@ namespace AHD
 		HRESULT createRenderTarget(ID3D11Texture2D** target, ID3D11RenderTargetView** targetView, ID3D11Device* device, int width, int height);
 		HRESULT createDepthStencil(ID3D11Texture2D** ds, ID3D11DepthStencilView** dsv, ID3D11Device* device, int width, int height);
 
-		HRESULT compileShader(ID3DBlob** out, const char* filename, const char* function, const char* profile);
+		HRESULT compileShader(ID3DBlob** out, const char* filename, const char* function, const char* profile, const D3D10_SHADER_MACRO* macros );
 		HRESULT createBuffer(ID3D11Buffer** buffer, ID3D11Device* device, D3D11_BIND_FLAG flag, size_t size, const void* initdata = 0);
 
 	};
