@@ -85,6 +85,7 @@
   <ItemGroup>
     <ClInclude Include="AHD.h" />
     <ClInclude Include="AHDUtils.h" />
+    <ClInclude Include="ObjReader.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="Utils.h" />
@@ -93,6 +94,7 @@
     <ClCompile Include="AHD.cpp" />
     <ClCompile Include="AHDUtils.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="ObjReader.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

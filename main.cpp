@@ -6,6 +6,9 @@
 #include <xnamath.h>
 #include <iostream>
 
+#include "ObjReader.h"
+
+
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
 
@@ -25,8 +28,20 @@ ID3D11Buffer*			constantBuffer = NULL;
 ID3D11Buffer*			variableBuffer = NULL;
 ID3D11Texture2D*        depthStencil = NULL;
 ID3D11DepthStencilView* depthStencilView = NULL;
+ID3D11SamplerState*		samplerLinear = NULL;
+
 
 Voxelizer::Result		voxels;
+
+struct Material
+{
+	XMFLOAT4 kd ;
+	XMFLOAT4 ks ;
+	float ns = 0;
+};
+std::vector<Material> materials;
+
+
 
 struct ConstantBuffer
 {
@@ -34,12 +49,15 @@ struct ConstantBuffer
 	XMMATRIX view;
 	XMMATRIX proj;
 	XMFLOAT4 lightdir;
+	XMFLOAT4 eye;
 } constants;
 
 struct VariableBuffer
 {
 	XMMATRIX local;
-	XMFLOAT4 color;
+	XMFLOAT4 kd;
+	XMFLOAT4 ks;
+	float ns;
 }variables;
 
 struct SimpleVertex
@@ -60,6 +78,12 @@ struct Camera
 		return XMMatrixTranspose(mat);
 	}
 }camera;
+
+struct Target
+{
+	XMFLOAT3 pos;
+	XMFLOAT3 rot;
+}target;
 
 enum Button
 {
@@ -147,26 +171,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			static short lastX = mousepos.x;
 			static short lastY = mousepos.y;
 
-			XMVECTOR left = XMVector3Cross(camera.up, camera.dir);
-			XMMATRIX rot1 = XMMatrixRotationAxis(camera.up, (lastX - mousepos.x) / 100.0f);
-			XMMATRIX rot2 = XMMatrixRotationAxis(left, (lastY - mousepos.y) / 100.0f);
 
 			if (mButtonState[MouseLeft])
 			{
 				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, (lastX - mousepos.x) / 100.0f, 0);
-				constants.world = rot2 * rot1 * constants.world;
-
+				//constants.world = rot2 * rot1 * constants.world;
+				target.rot.x += (mousepos.y - lastY) / 100.0f;
+				target.rot.y += (mousepos.x - lastX) / 100.0f;
 			}
 			else if (mButtonState[MouseRight])
 			{
+				XMVECTOR left = XMVector3Cross(camera.up, camera.dir);
+				XMMATRIX rot1 = XMMatrixRotationAxis(camera.up, (mousepos.x - lastX) / 100.0f);
+				XMMATRIX rot2 = XMMatrixRotationAxis(left, (mousepos.y - lastY) / 100.0f);
+
 				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, , 0);
 				camera.dir = XMVector4Transform(camera.dir, rot2 * rot1);
 			}
 			else if (mButtonState[MouseMid])
 			{
-				XMVECTOR vec = XMLoadFloat4(&constants.lightdir);
-				vec = XMVector4Transform(vec, rot2 * rot1);
-				XMStoreFloat4(&constants.lightdir, vec);
+				//XMVECTOR vec = XMLoadFloat4(&constants.lightdir);
+				//vec = XMVector4Transform(vec, rot2 * rot1);
+				//XMStoreFloat4(&constants.lightdir, vec);
 			}
 
 			lastX = mousepos.x;
@@ -414,7 +440,8 @@ HRESULT initDevice()
 	// Set primitive topology
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-
+	target.rot = XMFLOAT3(0, 0, 0);
+	target.pos = XMFLOAT3(0, 0, 0);
 	camera.pos = XMVectorSet(0.0f, 0.0f, -10.0f, 0.0f);
 	camera.dir = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 	camera.up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
@@ -437,6 +464,7 @@ HRESULT initDevice()
 	context->VSSetConstantBuffers(0, 1, &constantBuffer);
 	context->VSSetConstantBuffers(1, 1, &variableBuffer);
 	context->PSSetConstantBuffers(0, 1, &constantBuffer);
+	context->PSSetConstantBuffers(1, 1, &variableBuffer);
 
 	// Create vertex buffer
 	SimpleVertex vertices[] =
@@ -511,6 +539,17 @@ HRESULT initDevice()
 
 	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R16_UINT, 0);
 
+	D3D11_SAMPLER_DESC sampDesc;
+	ZeroMemory(&sampDesc, sizeof(sampDesc));
+	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	sampDesc.MinLOD = 0;
+	sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+	hr = device->CreateSamplerState(&sampDesc, &samplerLinear);
+
 	return S_OK;
 }
 
@@ -520,48 +559,56 @@ HRESULT initGeometry()
 {
 	Voxelizer v;
 	Voxelizer::Parameter para;
+
+	std::cout << "Loading model...";
+	long timer = GetTickCount();
+
+	ObjReader reader("cow.obj");
+	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
+
+
+	para.mesh.vertexCount = reader.getVertexCount();
+	para.mesh.vertexStride = reader.getVertexStride();
+	para.mesh.vertices = reader.getVertexBuffer();
+	para.mesh.indexStride = reader.getIndexStride();
+	para.mesh.indexCount = reader.getIndexCount();
+	para.mesh.indexes = reader.getIndexBuffer();
+	para.mesh.desc = reader.getDesc();
+	para.mesh.descCount = reader.getDescCount();
+	para.meshScale = 4;
+	
+	for (int i = 0; i < reader.getSubCount(); ++i)
+	{
+		const auto& s = reader.getSub(i);
+		MeshWrapper::Sub ms;
+		ms.count = s.indexCount;
+		ms.offset = s.indexStart;
+		para.mesh.subs.push_back(ms);
+
+
+		auto mat = reader.getMaterial(s.material);
+		Material m;
+		if (mat)
+		{
+			m.kd = XMFLOAT4(mat->kd[0], mat->kd[1], mat->kd[2], 1);
+			m.ks = XMFLOAT4(mat->ks[0], mat->ks[1], mat->ks[2], 1);
+			m.ns = mat->ns;
+		}
+
+		materials.push_back(m);
+	}
 	
 
-	FILE* f;
-	fopen_s(&f, "teapot.mesh", "rb");
-	//FILE* f = fopen("../Reasource/Model/tiger.mesh", "rb");
-	struct MeshInfo
-	{
-		int vertexSize;
-		int vertexCount;
-		int indexCount;
-	};
-	MeshInfo info;
-	fread(&info, sizeof(MeshInfo), 1, f);
-
-	std::vector<char*> verts;
-	verts.resize(info.vertexCount * info.vertexSize);
-	std::vector<short> indexs;
-	indexs.resize(info.indexCount);
-
-	//Ð´ÈëÊý¾Ý
-	fread(&verts[0], info.vertexSize * info.vertexCount, 1, f);
-	fread(&indexs[0], 2 * info.indexCount, 1, f);
-	fclose(f);
-
-	para.vertexCount = info.vertexCount;
-	para.vertexStride = info.vertexSize;
-	para.vertices = &verts[0];
-	para.indexCount = info.indexCount;
-	para.indexStride = 2;
-	para.indexes = &indexs[0];
-	para.voxelSize = 1.0f;
-	para.meshScale = 10;
-
-
-	long timer = GetTickCount();
+	std::cout << "Voxelizing...";
+	timer = GetTickCount();
+	
 	v.voxelize(voxels, para);
-	std::cout << "Voxelization cost " << (GetTickCount() - timer) << " ms" << std::endl;
-	std::cout << "voxels count : " << voxels.voxels.size();
 
-	constants.world = XMMatrixTranspose(XMMatrixTranslation(-voxels.width , -voxels.height , -voxels.depth ));
+	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
-
+	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
+	
+	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
 	return S_OK;
 
 
@@ -570,6 +617,9 @@ HRESULT initGeometry()
 void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
+
+
+	SAFE_RELEASE(samplerLinear);
 	SAFE_RELEASE(depthStencil);
 	SAFE_RELEASE(depthStencilView);
 	SAFE_RELEASE(variableBuffer);
@@ -594,17 +644,39 @@ void render()
 	context->ClearDepthStencilView(depthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
 	constants.view = camera.getMatrix();
+	XMStoreFloat4(&constants.eye, camera.pos);
+	constants.world = XMMatrixRotationRollPitchYaw(target.rot.x, target.rot.y, 0) *XMMatrixTranspose(XMMatrixTranslation(target.pos.x, target.pos.y, target.pos.z));
+
+
 	context->UpdateSubresource(constantBuffer, 0, NULL, &constants, 0, 0);
 
 
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
 
-	for (auto& i : voxels.voxels)
+	context->PSSetSamplers(0, 1, &samplerLinear);
+
+	int count = 0;
+	auto mat = materials.begin();
+	for (auto& i : voxels.subs)
 	{
-		variables.local = XMMatrixTranspose(XMMatrixTranslation(i.pos.x * 2, i.pos.y * 2, i.pos.z * 2));
-		context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
-		context->DrawIndexed(36, 0, 0);
+
+		for (auto& j : i.voxels)
+		{
+			variables.local = XMMatrixTranspose(XMMatrixTranslation(j.pos.x * 2 +count, j.pos.y * 2, j.pos.z * 2));
+			variables.kd = mat->kd;
+			variables.ks = mat->ks;
+			variables.ns = mat->ns;
+			
+			context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
+			
+			//context->PSSetShaderResources(0, 1, &*(mat));
+			context->DrawIndexed(36, 0, 0);
+		}
+		++mat;
+		//count += 60;
+
+		
 	}
 	
 	swapChain->Present(0, 0);
