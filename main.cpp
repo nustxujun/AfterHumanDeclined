@@ -558,7 +558,7 @@ HRESULT initDevice()
 HRESULT initGeometry()
 {
 	Voxelizer v;
-	Voxelizer::Parameter para;
+	MeshWrapper para;
 
 	std::cout << "Loading model...";
 	long timer = GetTickCount();
@@ -567,42 +567,18 @@ HRESULT initGeometry()
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
 
-	para.mesh.vertexCount = reader.getVertexCount();
-	para.mesh.vertexStride = reader.getVertexStride();
-	para.mesh.vertices = reader.getVertexBuffer();
-	para.mesh.indexStride = reader.getIndexStride();
-	para.mesh.indexCount = reader.getIndexCount();
-	para.mesh.indexes = reader.getIndexBuffer();
-	para.mesh.desc = reader.getDesc();
-	para.mesh.descCount = reader.getDescCount();
-	para.meshScale = 4;
+	para.vertexCount = reader.getVertexCount();
+	para.vertexStride = reader.getVertexStride();
+	para.vertices = reader.getVertexBuffer();
+	para.indexStride = reader.getIndexStride();
+	para.indexCount = reader.getIndexCount();
+	para.indexes = reader.getIndexBuffer();
 	
-	for (int i = 0; i < reader.getSubCount(); ++i)
-	{
-		const auto& s = reader.getSub(i);
-		MeshWrapper::Sub ms;
-		ms.count = s.indexCount;
-		ms.offset = s.indexStart;
-		para.mesh.subs.push_back(ms);
-
-
-		auto mat = reader.getMaterial(s.material);
-		Material m;
-		if (mat)
-		{
-			m.kd = XMFLOAT4(mat->kd[0], mat->kd[1], mat->kd[2], 1);
-			m.ks = XMFLOAT4(mat->ks[0], mat->ks[1], mat->ks[2], 1);
-			m.ns = mat->ns;
-		}
-
-		materials.push_back(m);
-	}
-	
-
 	std::cout << "Voxelizing...";
 	timer = GetTickCount();
-	
-	v.voxelize(voxels, para);
+
+	v.setMesh(para,10);
+	v.voxelize(voxels, 0,para.indexCount);
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
@@ -656,25 +632,25 @@ void render()
 
 	context->PSSetSamplers(0, 1, &samplerLinear);
 
-	int count = 0;
-	auto mat = materials.begin();
-	for (auto& i : voxels.subs)
+	int count = voxels.width * voxels.height * voxels.depth;
+	for (int i = 0; i < count; ++i)
 	{
-
-		for (auto& j : i.voxels)
+		int x = i % voxels.width;
+		int y = i / voxels.width % voxels.height;
+		int z = i/ voxels.width / voxels.height % voxels.depth;
+		int* content = (int*)voxels.datas.data() + i;
+		if (*content != 0)
 		{
-			variables.local = XMMatrixTranspose(XMMatrixTranslation(j.pos.x * 2 +count, j.pos.y * 2, j.pos.z * 2));
-			variables.kd = mat->kd;
-			variables.ks = mat->ks;
-			variables.ns = mat->ns;
+			variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2 , y * 2, z * 2));
+			variables.kd = XMFLOAT4(0.5, 0.5, 0.5, 0.5);
+			variables.ks = XMFLOAT4(0, 0, 0, 0);
+			variables.ns = 0;
 			
 			context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
 			
-			//context->PSSetShaderResources(0, 1, &*(mat));
 			context->DrawIndexed(36, 0, 0);
 		}
-		++mat;
-		//count += 60;
+	
 
 		
 	}

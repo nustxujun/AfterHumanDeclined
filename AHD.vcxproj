@@ -43,6 +43,7 @@
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(DXSDK_DIR)Include;</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);$(DXSDK_DIR)Lib\x86;</LibraryPath>
+    <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -84,6 +85,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AHD.h" />
+    <ClInclude Include="AHDd3d11Helper.h" />
     <ClInclude Include="AHDUtils.h" />
     <ClInclude Include="ObjReader.h" />
     <ClInclude Include="stdafx.h" />
@@ -92,6 +94,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AHD.cpp" />
+    <ClCompile Include="AHDd3d11Helper.cpp" />
     <ClCompile Include="AHDUtils.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ObjReader.cpp" />
@@ -102,6 +105,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="voxelizer.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

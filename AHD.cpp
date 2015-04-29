@@ -2,8 +2,8 @@
 #include "AHDUtils.h"
 #include <vector>
 #include <algorithm>
+#include "AHDd3d11Helper.h"
 #include <d3dcompiler.h>
-#include <xnamath.h>
 
 #undef max
 
@@ -16,162 +16,136 @@ using namespace AHD;
 
 #define CHECK_RESULT(x, y) { if (FAILED(x)) EXCEPT(y); }
 
-HRESULT Voxelizer::createDevice(ID3D11Device** device, ID3D11DeviceContext** context)
+typedef D3D11Helper Helper;
+
+void DefaultEffect::init(ID3D11Device* device, ID3D11DeviceContext* context)
 {
-	D3D_FEATURE_LEVEL lvl;
-	return D3D11CreateDevice(
-		NULL,
-		D3D_DRIVER_TYPE_HARDWARE,
-		NULL,
-		D3D11_CREATE_DEVICE_SINGLETHREADED 
-#ifdef _DEBUG
-		| D3D11_CREATE_DEVICE_DEBUG
-#endif
-		,
-		NULL,
-		0,
-		D3D11_SDK_VERSION,
-		device,
-		&lvl,
-		context
-		);
-}
-
-HRESULT Voxelizer::createUAV(ID3D11Texture3D** buffer, ID3D11UnorderedAccessView** uav, ID3D11Device* device, int width, int height, int depth)
-{
-	DXGI_FORMAT format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-
-	D3D11_TEXTURE3D_DESC TextureData;
-	ZeroMemory(&TextureData, sizeof(TextureData));
-	TextureData.Height = height;
-	TextureData.Width = width;
-	TextureData.Format = format;
-	TextureData.CPUAccessFlags = 0;
-	TextureData.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS;
-	TextureData.MipLevels = 1;
-	TextureData.MiscFlags = 0;
-	TextureData.Usage = D3D11_USAGE_DEFAULT;
-
-	TextureData.Depth = depth;
-
-	HRESULT hr = device->CreateTexture3D(&TextureData, 0, buffer);
-	if (hr != S_OK)
-		return hr;
-	D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
-	ZeroMemory(&desc, sizeof(desc));
-	desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE3D;
-	desc.Format = format;
-	desc.Texture3D.MipSlice = 0;
-	desc.Texture3D.FirstWSlice = 0;
-	desc.Texture3D.WSize = depth;
-
-	hr = device->CreateUnorderedAccessView(*buffer, &desc, uav);
-	return hr;
-}
-HRESULT Voxelizer::createRenderTarget(ID3D11Texture2D** target, ID3D11RenderTargetView** targetView, ID3D11Device* device, int width, int height)
-{
-	D3D11_TEXTURE2D_DESC dsDesc;
-	dsDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	dsDesc.Width = width;
-	dsDesc.Height = height;
-	dsDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
-	dsDesc.MipLevels = 1;
-	dsDesc.ArraySize = 1;
-	dsDesc.CPUAccessFlags = 0;
-	dsDesc.SampleDesc.Count = 1;
-	dsDesc.SampleDesc.Quality = 0;
-	dsDesc.MiscFlags = 0;
-	dsDesc.Usage = D3D11_USAGE_DEFAULT;
-	HRESULT hr;
-	if (FAILED(hr = device->CreateTexture2D(&dsDesc, 0, target)))
-		return hr;
-
-	if (FAILED(hr = device->CreateRenderTargetView(*target, 0, targetView)))
-		return hr;
-
-	return hr;
-}
-
-HRESULT Voxelizer::createDepthStencil(ID3D11Texture2D** ds, ID3D11DepthStencilView** dsv, ID3D11Device* device, int width, int height)
-{
-	D3D11_TEXTURE2D_DESC dsDesc;
-	dsDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	dsDesc.Width = width;
-	dsDesc.Height = height;
-	dsDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-	dsDesc.MipLevels = 1;
-	dsDesc.ArraySize = 1;
-	dsDesc.CPUAccessFlags = 0;
-	dsDesc.SampleDesc.Count = 1;
-	dsDesc.SampleDesc.Quality = 0;
-	dsDesc.MiscFlags = 0;
-	dsDesc.Usage = D3D11_USAGE_DEFAULT;
-	HRESULT hr = device->CreateTexture2D(&dsDesc, 0, ds);
-	if (hr != S_OK)
-		return hr;
-	hr = device->CreateDepthStencilView(*ds, 0, dsv);
-	return hr;
-}
-
-HRESULT Voxelizer::compileShader(ID3DBlob** out, const char* filename, const char* function, const char* profile, const D3D10_SHADER_MACRO* macros)
-{
-	ID3DBlob* ret = NULL;
-	ID3DBlob* error = NULL;
-	HRESULT hr = D3DX11CompileFromFileA(
-		filename,
-		macros,
-		NULL,
-		function,
-		profile,
-		D3DCOMPILE_ENABLE_STRICTNESS
-#ifdef _DEBUG
-		| D3DCOMPILE_DEBUG
-#endif
-		,
-		0,
-		NULL,
-		&ret,
-		&error,
-		NULL);
-
-	*out = ret;
-
-	if (error)
 	{
-		OutputDebugStringA((char*)error->GetBufferPointer());
-		error->Release();
+		D3D11_INPUT_ELEMENT_DESC desc[] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+
+		ID3DBlob* blob;
+		CHECK_RESULT(Helper::compileShader(&blob, "voxelizer.hlsl", "vs", "vs_5_0", NULL), 
+					 "fail to compile vertex shader, cant use gpu voxelizer");
+		CHECK_RESULT(device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout), 
+					 "fail to create mLayout,  cant use gpu voxelizer");
+		CHECK_RESULT(device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader), 
+					 "fail to create vertex shader,  cant use gpu voxelizer");
+		blob->Release();
 	}
 
-	return hr;
+	context->VSSetShader(mVertexShader, NULL, 0);
+	context->IASetInputLayout(mLayout);
+
+	{
+		ID3DBlob* blob;
+		CHECK_RESULT(Helper::compileShader(&blob, "voxelizer.hlsl", "ps", "ps_5_0", NULL), 
+					 "fail to compile pixel shader,  cant use gpu voxelizer");
+		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader), 
+					 "fail to create pixel shader, cant use gpu voxelizer");
+
+		blob->Release();
+	}
+	context->PSSetShader(mPixelShader, NULL, 0);
+
+
+	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(XMMATRIX) * 3), 
+				 "fail to create constant buffer,  cant use gpu voxelizer");
+	context->VSSetConstantBuffers(0, 1, &mConstant);
 
 }
 
-HRESULT Voxelizer::createBuffer(ID3D11Buffer** buffer, ID3D11Device* device, D3D11_BIND_FLAG flag, size_t size, const void* initdata)
+void DefaultEffect::prepare(EffectParameter& paras)
 {
-	D3D11_BUFFER_DESC bd;
-	ZeroMemory(&bd, sizeof(bd));
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = size;
-	bd.BindFlags = flag;
-	bd.CPUAccessFlags = 0;
-	D3D11_SUBRESOURCE_DATA InitData;
-	ZeroMemory(&InitData, sizeof(InitData));
-	InitData.pSysMem = initdata;
-	return device->CreateBuffer(&bd, initdata ? &InitData : 0, buffer);
+	paras.context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
 }
 
-void Voxelizer::voxelize(Result& result, const Parameter& para)
+void DefaultEffect::clean()
 {
+	mConstant->Release();
+	mVertexShader->Release();
+	mLayout->Release();
+	mPixelShader->Release();
+}
+
+Voxelizer::Voxelizer()
+{
+	Helper::createDevice(&mDevice, &mContext);
+
+}
+
+Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
+{
+	mDevice = device;
+	device->AddRef();
+	mContext = context;
+	context->AddRef();
+}
+
+Voxelizer::~Voxelizer()
+{
+	cleanResource();
+
+	mEffect->clean();
+
+	mContext.release();
+	mDevice.release();
+}
+
+void Voxelizer::cleanResource()
+{
+	mOutputTexture3D.release();
+	mOutputUAV.release();
+	mRenderTarget.release();
+	mRenderTargetView.release();
+	mVertexBuffer.release();
+	mIndexBuffer.release();
+}
+
+void Voxelizer::setMesh(const MeshWrapper& mesh, float scale)
+{
+	mMesh = mesh;
+	mScale = scale;
+
+	prepare();
+}
+
+void Voxelizer::setVoxelSize(float v)
+{
+	mVoxelSize = v;
+}
+
+void Voxelizer::setEffect(Effect* effect, DXGI_FORMAT format)
+{
+	if (mEffect != nullptr)
+	{
+		mEffect->clean();
+	}
+
+	mEffect = effect;
+	effect->init(mDevice, mContext);
+	mFormat = format;
+}
+
+bool Voxelizer::prepare()
+{
+	if (mDevice.isNull())
+		return false;
+
+	cleanResource();
+
+	if (mEffect == nullptr)
+		setEffect(&mDefaultEffect, DefaultEffect::OUTPUT_FORMAT);
+
 	AABB aabb;
 
 	//calculate the max size
-	size_t buffersize = para.mesh.vertexCount * para.mesh.vertexStride;
+	size_t buffersize = mMesh.vertexCount * mMesh.vertexStride;
 	{
-		const char* begin = (const char*)para.mesh.vertices;
+		const char* begin = (const char*)mMesh.vertices;
 		const char* end = begin + buffersize;
-		for (; begin != end; begin += para.mesh.vertexStride)
+		for (; begin != end; begin += mMesh.vertexStride)
 		{
-			Vector3 v = (*(const Vector3*)begin) * para.meshScale;
+			Vector3 v = (*(const Vector3*)begin) * mScale;
 			aabb.merge(v);
 		}
 	}
@@ -181,130 +155,58 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 	Vector3 tran = -aabb.getMin();
 
 	aabb.setExtents(Vector3::ZERO, size);
-	size = aabb.getSize() / para.voxelSize;
+	size = aabb.getSize() / mVoxelSize;
 	size += Vector3::UNIT_SCALE;
-	int width = std::floor(size.x);
-	int height = std::floor(size.y);
-	int depth = std::floor(size.z);
+	mSize.width = (int)std::floor(size.x);
+	mSize.height = (int)std::floor(size.y);
+	mSize.depth = (int)std::floor(size.z);
 
-	result.width = width;
-	result.height = height;
-	result.depth = depth;
+	mSize.maxLength = std::max(mSize.width, std::max(mSize.height, mSize.depth));
 
-	int length = std::max(width, std::max(height, depth));
+	//transfrom
+	mTranslation = XMMatrixTranspose(XMMatrixTranslation(tran.x, tran.y, tran.z)) *
+		XMMatrixScaling(mScale, mScale, mScale);
+	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)mSize.maxLength, 0, (float)mSize.maxLength, 0, (float)mSize.maxLength));
 
-	Interface<ID3D11Device> device;
-	Interface<ID3D11DeviceContext> context;
+	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mFormat, mSize.width, mSize.height, mSize.depth),
+				 "failed to create uav texture3D,  cant use gpu voxelizer");
 
-	HRESULT hr = S_OK;
-	CHECK_RESULT(createDevice(&device, &context), "fail to create device, cant use gpu voxelizer");
+	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
+				 "failed to create rendertarget,  cant use gpu voxelizer");
+	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
 
-	Interface<ID3D11Texture3D> output;
-	Interface<ID3D11UnorderedAccessView> outputUAV;
-	hr = createUAV(&output, &outputUAV, device, width, height, depth);
-
-
-	Interface<ID3D11Texture2D> rendertarget;
-	Interface<ID3D11RenderTargetView> rendertargetview;
-	hr = createRenderTarget(&rendertarget, &rendertargetview, device, length, length);
-	context->OMSetRenderTargetsAndUnorderedAccessViews(1, &rendertargetview, NULL, 1, 1, &outputUAV, NULL);
-
-	Interface<ID3D11InputLayout> layout;
-	Interface<ID3D11VertexShader> vertexShader;
-	Interface<ID3D11PixelShader> pixelShader;
-
-	D3D10_SHADER_MACRO macros[] = { { "HAS_TEXCOORD", "1" }, {0,0} };
-	bool hasTexcoord = false;
-	{
-		D3D11_INPUT_ELEMENT_DESC desc[2] = { 0 };
-		if (para.mesh.desc != nullptr && para.mesh.descCount != 0)
-		{
-			for (int i = 0; i < para.mesh.descCount; ++i)
-			{
-				if (para.mesh.desc[i].SemanticName == std::string("POSITION"))
-				{
-					desc[0] = para.mesh.desc[i];
-				}
-				else if (para.mesh.desc[i].SemanticName == std::string("TEXCOORD") &&
-						 para.mesh.desc[i].SemanticIndex == 0)
-				{
-					desc[1] = para.mesh.desc[i];
-					hasTexcoord = true;
-				}
-			}
-		}
-		
-		if (desc[0].SemanticName == nullptr)
-		{
-			desc[0] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
-		}
-		
-		Interface<ID3DBlob> blob;
-		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "vs", "vs_5_0", hasTexcoord ? macros : NULL), "fail to compile vertex shader, cant use gpu voxelizer");
-		CHECK_RESULT(device->CreateInputLayout(desc, hasTexcoord?2:1, blob->GetBufferPointer(), blob->GetBufferSize(), &layout), "fail to create layout,  cant use gpu voxelizer");
-		CHECK_RESULT(device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &vertexShader), "fail to create vertex shader,  cant use gpu voxelizer");
-
-		context->VSSetShader(vertexShader, NULL, 0);
-		context->IASetInputLayout(layout);
-
-	}
-	{
-		Interface<ID3DBlob> blob;
-		CHECK_RESULT(compileShader(&blob, "voxelizer.hlsl", "ps", "ps_5_0", hasTexcoord ? macros : NULL), "fail to compile pixel shader,  cant use gpu voxelizer");
-		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &pixelShader), "fail to create pixel shader, cant use gpu voxelizer");
-
-		context->PSSetShader(pixelShader, NULL, 0);
-	}
-	Interface<ID3D11Buffer> vertexBuffer;
-	CHECK_RESULT(createBuffer(&vertexBuffer, device, D3D11_BIND_VERTEX_BUFFER, para.mesh.vertexCount * para.mesh.vertexStride, para.mesh.vertices), "fail to create vertex buffer,  cant use gpu voxelizer");
-	UINT stride = para.mesh.vertexStride;
+	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mMesh.vertexCount * mMesh.vertexStride, mMesh.vertices), 
+				 "fail to create vertex buffer,  cant use gpu voxelizer");
+	UINT stride = mMesh.vertexStride;
 	UINT offset = 0;
-	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	mContext->IASetVertexBuffers(0, 1, &mVertexBuffer, &stride, &offset);
+	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	Interface<ID3D11Buffer> indexBuffer;
-	bool useIndex = para.mesh.indexCount != 0 && para.mesh.indexes != nullptr && para.mesh.indexStride != 0;
+	bool useIndex = mMesh.indexCount != 0 && mMesh.indexes != nullptr && mMesh.indexStride != 0;
 	if (useIndex)
 	{
-		CHECK_RESULT(createBuffer(&indexBuffer, device, D3D11_BIND_INDEX_BUFFER, para.mesh.indexCount * para.mesh.indexStride, para.mesh.indexes), "fail to create index buffer,  cant use gpu voxelizer");
+		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mMesh.indexCount * mMesh.indexStride, mMesh.indexes), "fail to create index buffer,  cant use gpu voxelizer");
 
 		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
-		switch (para.mesh.indexStride)
+		switch (mMesh.indexStride)
 		{
-			case 2: format = DXGI_FORMAT_R16_UINT; break;
-			case 4: format = DXGI_FORMAT_R32_UINT; break;
+		case 2: format = DXGI_FORMAT_R16_UINT; break;
+		case 4: format = DXGI_FORMAT_R32_UINT; break;
 
-			default:
-				EXCEPT("unknown index format");
-				break;
+		default:
+			EXCEPT("unknown index format");
+			break;
 		}
-		context->IASetIndexBuffer(indexBuffer, format, 0);
+		mContext->IASetIndexBuffer(mIndexBuffer, format, 0);
 	}
 
-	Interface<ID3D11Buffer> constantBuffer;
-	struct ConstantBuffer
-	{
-		XMMATRIX world;
-		XMMATRIX view;
-		XMMATRIX proj;
-	} parameters;
-	// all the vertices pos.xyz will move above zero
-	// the render range is (0,0,0) to (length, length, length)
-	parameters.world = XMMatrixTranspose(XMMatrixTranslation(tran.x, tran.y, tran.z)) *
-		XMMatrixScaling(para.meshScale, para.meshScale, para.meshScale);
-	XMVECTOR Eye = XMVectorSet(0.0, 0, -0.0, 0.0f);
-	XMVECTOR At = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-	XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-	parameters.view = XMMatrixLookAtLH(Eye, At, Up);
-	parameters.view = XMMatrixTranspose(parameters.view);
-	parameters.proj = XMMatrixOrthographicOffCenterLH(0, length, 0, length, 0, length);
-	parameters.proj = XMMatrixTranspose(parameters.proj);
+
+	return true;
+}
 
 
-
-	CHECK_RESULT(createBuffer(&constantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(parameters), &parameters), "fail to create constant buffer,  cant use gpu voxelizer");
-	context->VSSetConstantBuffers(0, 1, &constantBuffer);
-
+void Voxelizer::voxelize(Result& result, int start, int count)
+{
 
 	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
@@ -321,20 +223,21 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		desc.MultisampleEnable = false;
 		desc.AntialiasedLineEnable = false;
 
-		CHECK_RESULT(device->CreateRasterizerState(&desc, &rasterizerState), "fail to create rasterizer state,  cant use gpu voxelizer");
-		context->RSSetState(rasterizerState);
+		CHECK_RESULT(mDevice->CreateRasterizerState(&desc, &rasterizerState), 
+					 "fail to create rasterizer state,  cant use gpu voxelizer");
+		mContext->RSSetState(rasterizerState);
 	}
 
 
 
 	D3D11_VIEWPORT vp;
-	vp.Width = (FLOAT)length;
-	vp.Height = (FLOAT)length;
+	vp.Width = (FLOAT)mSize.maxLength;
+	vp.Height = (FLOAT)mSize.maxLength;
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
 	vp.TopLeftX = 0;
 	vp.TopLeftY = 0;
-	context->RSSetViewports(1, &vp);
+	mContext->RSSetViewports(1, &vp);
 
 
 	struct ViewPara
@@ -344,20 +247,25 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 		Vector3 up;
 	};
 
-	for (auto sub : para.mesh.subs)
-	{
-		//uav is our real rendertarget
-		UINT initcolor[4] = { 0 };
-		context->ClearUnorderedAccessViewUint(outputUAV, initcolor);
+	bool useIndex = !mIndexBuffer.isNull();
 
-		result.subs.push_back(Result::Sub());
-		auto& retsub = result.subs.back();
+	EffectParameter parameters;
+	parameters.device = mDevice;
+	parameters.context = mContext;
+	parameters.world = mTranslation;
+	parameters.proj = mProjection;
+
+	{
+		//uav is our real mRenderTarget
+		UINT initcolor[4] = { 0 };
+		mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
+
 		//we need to render 3 times from different views
 		ViewPara views[] =
 		{
-			Vector3::ZERO, Vector3::UNIT_Z * length, Vector3::UNIT_Y,
-			Vector3::UNIT_X * length, Vector3::ZERO, Vector3::UNIT_Y,
-			Vector3::UNIT_Y * length, Vector3::ZERO, Vector3::UNIT_Z,
+			Vector3::ZERO, Vector3::UNIT_Z * (float)mSize.maxLength, Vector3::UNIT_Y,
+			Vector3::UNIT_X * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Y,
+			Vector3::UNIT_Y * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Z,
 		};
 
 		for (ViewPara& v : views)
@@ -367,51 +275,49 @@ void Voxelizer::voxelize(Result& result, const Parameter& para)
 			XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
 			parameters.view = XMMatrixLookAtLH(Eye, At, Up);
 			parameters.view = XMMatrixTranspose(parameters.view);
-			context->UpdateSubresource(constantBuffer, 0, NULL, &parameters, 0, 0);
 
+			mEffect->prepare(parameters);
 
 			if (useIndex)
-				context->DrawIndexed(sub.count, sub.offset, 0);
+				mContext->DrawIndexed(count, start, 0);
 			else
-				context->Draw(sub.count, sub.offset);
+				mContext->Draw(count, start);
 
 			Interface<ID3D11Texture3D> debug = NULL;
 			D3D11_TEXTURE3D_DESC dsDesc;
-			output->GetDesc(&dsDesc);
+			mOutputTexture3D->GetDesc(&dsDesc);
 			dsDesc.BindFlags = 0;
 			dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			dsDesc.MiscFlags = 0;
 			dsDesc.Usage = D3D11_USAGE_STAGING;
 
-			CHECK_RESULT(device->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
+			CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
 
-			context->CopyResource(debug, output);
+			mContext->CopyResource(debug, mOutputTexture3D);
 			D3D11_MAPPED_SUBRESOURCE mr;
-			context->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
+			mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
 
-			for (int z = 0; z < depth; ++z)
+			int stride = mEffect->getElementSize() * mSize.width;
+			result.datas.reserve(stride * mSize.height * mSize.depth );
+			char* begin = result.datas.data();
+			for (int z = 0; z < mSize.depth; ++z)
 			{
 				const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-				for (int y = 0; y < height; ++y)
+				for (int y = 0; y < mSize.height; ++y)
 				{
-					const float* begin = (const float*)(depth + mr.RowPitch * y);
-					for (int x = 0; x < width; ++x)
-					{
-						if (begin[2] != 0)
-						{
-							Voxel v = { x, y, z, begin[0], begin[1] };
-							retsub.voxels.push_back(v);
-						}
-
-						begin += 4;
-					}
+					memcpy(begin, depth + mr.RowPitch * y, stride);
+					begin += stride;
 				}
 			}
 
-			context->Unmap(debug, 0);
+			mContext->Unmap(debug, 0);
 		}
 
 	}
 
+
+	result.width = mSize.width;
+	result.height = mSize.height;
+	result.depth = mSize.depth;
 	
 }

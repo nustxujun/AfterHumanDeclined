@@ -170,7 +170,7 @@ bool ObjReader::parse(ifstream& f)
 
 	mVertexCount = poses.size();
 	char* begin = (char*)mVertexBuffer;
-	for (size_t i = 0; i < mVertexCount; ++i)
+	for (int i = 0; i < mVertexCount; ++i)
 	{
 		memcpy(begin, &poses[i], sizeof(float3));
 		begin += sizeof(float3);
