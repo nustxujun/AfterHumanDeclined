@@ -7,8 +7,8 @@
 #include <iostream>
 #include "AHDd3d11Helper.h"
 
-#include "ObjReader.h"
-
+#include "Objreader.h"
+#include <vector>
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -33,6 +33,8 @@ ID3D11SamplerState*		samplerLinear = NULL;
 
 
 Voxelizer::Result		voxels;
+ObjReader* reader;
+float scale = 4.0;
 
 struct Material
 {
@@ -100,30 +102,28 @@ public:
 	void init(ID3D11Device* device)
 	{
 		{
-			{
-				D3D11_INPUT_ELEMENT_DESC desc[] = 
-				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+			D3D11_INPUT_ELEMENT_DESC desc[] =
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
 
-				ID3DBlob* blob;
-				D3D11Helper::compileShader(&blob, "cow.hlsl", "vs", "vs_5_0", NULL);
-				device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout);
-				device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader);
-				blob->Release();
-			}
-
-
-			{
-				ID3DBlob* blob;
-				D3D11Helper::compileShader(&blob, "cow.hlsl", "ps", "ps_5_0", NULL);
-				device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader);
-
-				blob->Release();
-			}
-
-
-			D3D11Helper::createBuffer(&mConstantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(mConstant));
-
+			ID3DBlob* blob;
+			D3D11Helper::compileShader(&blob, "cow.hlsl", "vs", "vs_5_0", NULL);
+			device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout);
+			device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader);
+			blob->Release();
 		}
+
+
+		{
+			ID3DBlob* blob;
+			D3D11Helper::compileShader(&blob, "cow.hlsl", "ps", "ps_5_0", NULL);
+			device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader);
+
+			blob->Release();
+		}
+
+
+		D3D11Helper::createBuffer(&mConstantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(mConstant));
+
 	}
 	void prepare(ID3D11DeviceContext* context)
 	{
@@ -174,8 +174,12 @@ enum Key
 	K_A = 65,
 	K_S = 83,
 	K_D = 68,
+	K_1 = 49,
+	K_2 = 50,
 };
 
+
+void voxelize(float s = 1.0);
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -201,7 +205,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case K_A: camera.pos += -left; break;
 			case K_S: camera.pos += -camera.dir; break;
 			case K_D: camera.pos += left; break;
-
+			case K_1: scale = (scale > 2) ? scale + 1 : scale + 0.1; voxelize(scale); break;
+			case K_2: scale = (scale > 2) ? scale - 1 : scale - 0.1; voxelize(scale); break;
 			}
 		}
 			break;
@@ -246,8 +251,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			if (mButtonState[MouseLeft])
 			{
-				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, (lastX - mousepos.x) / 100.0f, 0);
-				//constants.world = rot2 * rot1 * constants.world;
+
 				target.rot.x += (mousepos.y - lastY) / 100.0f;
 				target.rot.y += (mousepos.x - lastX) / 100.0f;
 			}
@@ -257,14 +261,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				XMMATRIX rot1 = XMMatrixRotationAxis(camera.up, (mousepos.x - lastX) / 100.0f);
 				XMMATRIX rot2 = XMMatrixRotationAxis(left, (mousepos.y - lastY) / 100.0f);
 
-				//XMMATRIX rot = XMMatrixRotationRollPitchYaw((lastY - mousepos.y) / 100.0f, , 0);
 				camera.dir = XMVector4Transform(camera.dir, rot2 * rot1);
 			}
 			else if (mButtonState[MouseMid])
 			{
-				//XMVECTOR vec = XMLoadFloat4(&constants.lightdir);
-				//vec = XMVector4Transform(vec, rot2 * rot1);
-				//XMStoreFloat4(&constants.lightdir, vec);
 			}
 
 			lastX = mousepos.x;
@@ -625,65 +625,71 @@ HRESULT initDevice()
 	return S_OK;
 }
 
-#include <vector>
+
 
 HRESULT initGeometry()
 {
-	Voxelizer v;
-	MeshWrapper para;
 
 	std::cout << "Loading model...";
 	long timer = GetTickCount();
-
-	ObjReader reader("cow.obj");
-	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
-
-
-	para.vertexCount = reader.getVertexCount();
-	para.vertexStride = reader.getVertexStride();
-	para.vertices = reader.getVertexBuffer();
-	para.indexStride = reader.getIndexStride();
-	para.indexCount = reader.getIndexCount();
-	para.indexes = reader.getIndexBuffer();
-	
-	std::cout << "Voxelizing...";
-	timer = GetTickCount();
-
-	v.setMesh(para,20);
-
-	CowEffect* effect = v.createEffect<CowEffect>();
-
-	for (int i = 0; i < reader.getSubCount(); ++i)
-	{
-		auto& sub = reader.getSub(i);
-		auto mat = reader.getMaterial(sub.material);
-		memcpy(effect->mConstant.color, mat->kd, sizeof(float) * 3);
-		effect->mConstant.color[3] = 1;
-		//effect->mConstant.color = XMFLOAT4(mat->kd[0], mat->kd[1], mat->kd[2],1);
-		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-		v.voxelize( sub.indexStart, sub.indexCount);
-
-	}
-
-	v.exportVoxels(voxels);
-
-	//v.voxelize(voxels, 0, para.indexCount);
-
+	reader = new ObjReader("cow.obj");
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
-	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
-	
-	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
+	voxelize(scale);
+
+
+
 	return S_OK;
 
 
 }
 
+
+void voxelize(float s )
+{
+	Voxelizer v;
+
+	MeshWrapper para;
+	para.vertexCount = reader->getVertexCount();
+	para.vertexStride = reader->getVertexStride();
+	para.vertices = reader->getVertexBuffer();
+	para.indexStride = reader->getIndexStride();
+	para.indexCount = reader->getIndexCount();
+	para.indexes = reader->getIndexBuffer();
+
+	std::cout << "Voxelizing...";
+	long timer = GetTickCount();
+
+	v.setMesh(para, s);
+
+	CowEffect* effect = v.createEffect<CowEffect>();
+
+	for (int i = 0; i < reader->getSubCount(); ++i)
+	{
+		auto& sub = reader->getSub(i);
+		auto mat = reader->getMaterial(sub.material);
+		memcpy(effect->mConstant.color, mat->kd, sizeof(float) * 3);
+		effect->mConstant.color[3] = 1;
+		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		v.voxelize(sub.indexStart, sub.indexCount);
+
+	}
+
+	//v.voxelize(voxels, 0, para.indexCount);
+
+	v.exportVoxels(voxels);
+	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
+
+	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
+
+	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
+}
+
 void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
-
+	delete reader;
 
 	SAFE_RELEASE(samplerLinear);
 	SAFE_RELEASE(depthStencil);

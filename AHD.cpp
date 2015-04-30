@@ -201,31 +201,15 @@ bool Voxelizer::prepare()
 
 	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
 				 "failed to create rendertarget,  cant use gpu voxelizer");
-	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
 
 	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mMesh.vertexCount * mMesh.vertexStride, mMesh.vertices), 
 				 "fail to create vertex buffer,  cant use gpu voxelizer");
-	UINT stride = mMesh.vertexStride;
-	UINT offset = 0;
-	mContext->IASetVertexBuffers(0, 1, &mVertexBuffer, &stride, &offset);
-	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
 
 	bool useIndex = mMesh.indexCount != 0 && mMesh.indexes != nullptr && mMesh.indexStride != 0;
 	if (useIndex)
 	{
 		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mMesh.indexCount * mMesh.indexStride, mMesh.indexes), "fail to create index buffer,  cant use gpu voxelizer");
-
-		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
-		switch (mMesh.indexStride)
-		{
-		case 2: format = DXGI_FORMAT_R16_UINT; break;
-		case 4: format = DXGI_FORMAT_R32_UINT; break;
-
-		default:
-			EXCEPT("unknown index format");
-			break;
-		}
-		mContext->IASetIndexBuffer(mIndexBuffer, format, 0);
 	}
 
 
@@ -235,10 +219,32 @@ bool Voxelizer::prepare()
 
 void Voxelizer::voxelize(int start, int count)
 {
-	if (mNeedPrepare)
+	if (mNeedPrepare && !prepare())
 	{
-		prepare();
+		EXCEPT(" cant use gpu voxelizer");
 	}
+
+	UINT stride = mMesh.vertexStride;
+	UINT offset = 0;
+	mContext->IASetVertexBuffers(0, 1, &mVertexBuffer, &stride, &offset);
+	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
+
+	bool useIndex = !mIndexBuffer.isNull();
+	if (useIndex)
+	{
+		DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
+		switch (mMesh.indexStride)
+		{
+		case 2: format = DXGI_FORMAT_R16_UINT; break;
+		case 4: format = DXGI_FORMAT_R32_UINT; break;
+		default:
+			EXCEPT("unknown index format");
+			break;
+		}
+		mContext->IASetIndexBuffer(mIndexBuffer, format, 0);
+	}
+
 	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
 	{
@@ -276,7 +282,6 @@ void Voxelizer::voxelize(int start, int count)
 		Vector3 up;
 	};
 
-	bool useIndex = !mIndexBuffer.isNull();
 
 	EffectParameter parameters;
 	parameters.device = mDevice;
@@ -325,7 +330,8 @@ void Voxelizer::exportVoxels(Result& result)
 	dsDesc.MiscFlags = 0;
 	dsDesc.Usage = D3D11_USAGE_STAGING;
 
-	CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
+	CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug), 
+				 "fail to create staging buffer, cant use gpu voxelizer");
 
 	mContext->CopyResource(debug, mOutputTexture3D);
 	D3D11_MAPPED_SUBRESOURCE mr;
