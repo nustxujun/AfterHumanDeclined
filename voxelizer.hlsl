@@ -5,7 +5,7 @@ cbuffer ConstantBuffer : register(b0)
 	matrix Projection;
 }
 
-RWTexture3D<int> voxels:register(u1);//rendertarget is using u0
+RWTexture3D<unsigned int> voxels:register(u1);//rendertarget is using u0
 
 struct VS_INPUT
 {

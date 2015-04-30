@@ -18,7 +18,7 @@ using namespace AHD;
 
 typedef D3D11Helper Helper;
 
-void DefaultEffect::init(ID3D11Device* device, ID3D11DeviceContext* context)
+void DefaultEffect::init(ID3D11Device* device)
 {
 	{
 		D3D11_INPUT_ELEMENT_DESC desc[] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
@@ -33,8 +33,6 @@ void DefaultEffect::init(ID3D11Device* device, ID3D11DeviceContext* context)
 		blob->Release();
 	}
 
-	context->VSSetShader(mVertexShader, NULL, 0);
-	context->IASetInputLayout(mLayout);
 
 	{
 		ID3DBlob* blob;
@@ -45,19 +43,28 @@ void DefaultEffect::init(ID3D11Device* device, ID3D11DeviceContext* context)
 
 		blob->Release();
 	}
-	context->PSSetShader(mPixelShader, NULL, 0);
 
 
 	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(XMMATRIX) * 3), 
 				 "fail to create constant buffer,  cant use gpu voxelizer");
+
+}
+
+void DefaultEffect::prepare(ID3D11DeviceContext* context)
+{
+	context->VSSetShader(mVertexShader, NULL, 0);
+	context->IASetInputLayout(mLayout);
+	context->PSSetShader(mPixelShader, NULL, 0);
 	context->VSSetConstantBuffers(0, 1, &mConstant);
 
 }
 
-void DefaultEffect::prepare(EffectParameter& paras)
+void DefaultEffect::update(EffectParameter& paras)
 {
 	paras.context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
+
 }
+
 
 void DefaultEffect::clean()
 {
@@ -71,6 +78,11 @@ Voxelizer::Voxelizer()
 {
 	Helper::createDevice(&mDevice, &mContext);
 
+	mDefaultEffect.init(mDevice);
+	setEffectAndUAVParameters(&mDefaultEffect,
+							  DefaultEffect::OUTPUT_FORMAT,
+							  DefaultEffect::SLOT,
+							  DefaultEffect::ELEM_SIZE);
 }
 
 Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
@@ -79,13 +91,24 @@ Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
 	device->AddRef();
 	mContext = context;
 	context->AddRef();
+
+	mDefaultEffect.init(mDevice);
+	setEffectAndUAVParameters(&mDefaultEffect, 
+							  DefaultEffect::OUTPUT_FORMAT, 
+							  DefaultEffect::SLOT, 
+							  DefaultEffect::ELEM_SIZE);
 }
 
 Voxelizer::~Voxelizer()
 {
 	cleanResource();
 
-	mEffect->clean();
+	mDefaultEffect.clean();
+	for (auto i : mEffects)
+	{
+		i->clean();
+		delete i;
+	}
 
 	mContext.release();
 	mDevice.release();
@@ -106,7 +129,7 @@ void Voxelizer::setMesh(const MeshWrapper& mesh, float scale)
 	mMesh = mesh;
 	mScale = scale;
 
-	prepare();
+	mNeedPrepare = true;
 }
 
 void Voxelizer::setVoxelSize(float v)
@@ -114,27 +137,29 @@ void Voxelizer::setVoxelSize(float v)
 	mVoxelSize = v;
 }
 
-void Voxelizer::setEffect(Effect* effect, DXGI_FORMAT format)
+void Voxelizer::setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize)
 {
-	if (mEffect != nullptr)
-	{
-		mEffect->clean();
-	}
+	mNeedPrepare |= mUAVFormat != Format || mUAVSlot != slot;
 
-	mEffect = effect;
-	effect->init(mDevice, mContext);
-	mFormat = format;
+	if (slot == 0)
+	{
+		EXCEPT("uav slot 0 is almost used for rendertarget,cannot be 0.");
+	}
+	mUAVSlot = slot;
+	effect->prepare(mContext);
+	mCurrentEffect = effect;
+
+	mUAVElementSize = elemSize;
+	mUAVFormat = Format;
+	
 }
 
 bool Voxelizer::prepare()
 {
 	if (mDevice.isNull())
 		return false;
-
+	mNeedPrepare = false;
 	cleanResource();
-
-	if (mEffect == nullptr)
-		setEffect(&mDefaultEffect, DefaultEffect::OUTPUT_FORMAT);
 
 	AABB aabb;
 
@@ -168,8 +193,11 @@ bool Voxelizer::prepare()
 		XMMatrixScaling(mScale, mScale, mScale);
 	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)mSize.maxLength, 0, (float)mSize.maxLength, 0, (float)mSize.maxLength));
 
-	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mFormat, mSize.width, mSize.height, mSize.depth),
+	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mUAVFormat, mSize.width, mSize.height, mSize.depth),
 				 "failed to create uav texture3D,  cant use gpu voxelizer");
+
+	UINT initcolor[4] = { 0 };
+	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 
 	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
 				 "failed to create rendertarget,  cant use gpu voxelizer");
@@ -205,9 +233,12 @@ bool Voxelizer::prepare()
 }
 
 
-void Voxelizer::voxelize(Result& result, int start, int count)
+void Voxelizer::voxelize(int start, int count)
 {
-
+	if (mNeedPrepare)
+	{
+		prepare();
+	}
 	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
 	{
@@ -227,8 +258,6 @@ void Voxelizer::voxelize(Result& result, int start, int count)
 					 "fail to create rasterizer state,  cant use gpu voxelizer");
 		mContext->RSSetState(rasterizerState);
 	}
-
-
 
 	D3D11_VIEWPORT vp;
 	vp.Width = (FLOAT)mSize.maxLength;
@@ -255,69 +284,69 @@ void Voxelizer::voxelize(Result& result, int start, int count)
 	parameters.world = mTranslation;
 	parameters.proj = mProjection;
 
+	//we need to render 3 times from different views
+	ViewPara views[] =
 	{
-		//uav is our real mRenderTarget
-		UINT initcolor[4] = { 0 };
-		mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
+		Vector3::ZERO, Vector3::UNIT_Z * (float)mSize.maxLength, Vector3::UNIT_Y,
+		Vector3::UNIT_X * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Y,
+		Vector3::UNIT_Y * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Z,
+	};
 
-		//we need to render 3 times from different views
-		ViewPara views[] =
-		{
-			Vector3::ZERO, Vector3::UNIT_Z * (float)mSize.maxLength, Vector3::UNIT_Y,
-			Vector3::UNIT_X * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Y,
-			Vector3::UNIT_Y * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Z,
-		};
+	for (ViewPara& v : views)
+	{
+		XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
+		XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
+		XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
+		parameters.view = XMMatrixLookAtLH(Eye, At, Up);
+		parameters.view = XMMatrixTranspose(parameters.view);
 
-		for (ViewPara& v : views)
-		{
-			XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
-			XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
-			XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
-			parameters.view = XMMatrixLookAtLH(Eye, At, Up);
-			parameters.view = XMMatrixTranspose(parameters.view);
+		mCurrentEffect->update(parameters);
 
-			mEffect->prepare(parameters);
-
-			if (useIndex)
-				mContext->DrawIndexed(count, start, 0);
-			else
-				mContext->Draw(count, start);
-
-			Interface<ID3D11Texture3D> debug = NULL;
-			D3D11_TEXTURE3D_DESC dsDesc;
-			mOutputTexture3D->GetDesc(&dsDesc);
-			dsDesc.BindFlags = 0;
-			dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-			dsDesc.MiscFlags = 0;
-			dsDesc.Usage = D3D11_USAGE_STAGING;
-
-			CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
-
-			mContext->CopyResource(debug, mOutputTexture3D);
-			D3D11_MAPPED_SUBRESOURCE mr;
-			mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
-
-			int stride = mEffect->getElementSize() * mSize.width;
-			result.datas.reserve(stride * mSize.height * mSize.depth );
-			char* begin = result.datas.data();
-			for (int z = 0; z < mSize.depth; ++z)
-			{
-				const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-				for (int y = 0; y < mSize.height; ++y)
-				{
-					memcpy(begin, depth + mr.RowPitch * y, stride);
-					begin += stride;
-				}
-			}
-
-			mContext->Unmap(debug, 0);
-		}
+		if (useIndex)
+			mContext->DrawIndexed(count, start, 0);
+		else
+			mContext->Draw(count, start);
 
 	}
 
+}
 
+void Voxelizer::exportVoxels(Result& result)
+{
 	result.width = mSize.width;
 	result.height = mSize.height;
 	result.depth = mSize.depth;
-	
+
+	Interface<ID3D11Texture3D> debug = NULL;
+	D3D11_TEXTURE3D_DESC dsDesc;
+	mOutputTexture3D->GetDesc(&dsDesc);
+	dsDesc.BindFlags = 0;
+	dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	dsDesc.MiscFlags = 0;
+	dsDesc.Usage = D3D11_USAGE_STAGING;
+
+	CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug), "fail to create staging buffer, cant use gpu voxelizer");
+
+	mContext->CopyResource(debug, mOutputTexture3D);
+	D3D11_MAPPED_SUBRESOURCE mr;
+	mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
+
+	int stride = mUAVElementSize * mSize.width;
+	result.datas.reserve(stride * mSize.height * mSize.depth);
+	char* begin = result.datas.data();
+	for (int z = 0; z < mSize.depth; ++z)
+	{
+		const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
+		for (int y = 0; y < mSize.height; ++y)
+		{
+			memcpy(begin, depth + mr.RowPitch * y, stride);
+			begin += stride;
+		}
+	}
+
+	mContext->Unmap(debug, 0);
+
+	UINT initcolor[4] = { 0 };
+	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 }
+

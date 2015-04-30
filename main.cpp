@@ -5,6 +5,7 @@
 #include <d3dcompiler.h>
 #include <xnamath.h>
 #include <iostream>
+#include "AHDd3d11Helper.h"
 
 #include "ObjReader.h"
 
@@ -84,6 +85,77 @@ struct Target
 	XMFLOAT3 pos;
 	XMFLOAT3 rot;
 }target;
+
+class CowEffect : public Effect
+{
+public:
+	struct Constant
+	{
+		float world[16];
+		float view[16];
+		float proj[16];
+		float color[4];
+	}mConstant;
+
+	void init(ID3D11Device* device)
+	{
+		{
+			{
+				D3D11_INPUT_ELEMENT_DESC desc[] = 
+				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+
+				ID3DBlob* blob;
+				D3D11Helper::compileShader(&blob, "cow.hlsl", "vs", "vs_5_0", NULL);
+				device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout);
+				device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader);
+				blob->Release();
+			}
+
+
+			{
+				ID3DBlob* blob;
+				D3D11Helper::compileShader(&blob, "cow.hlsl", "ps", "ps_5_0", NULL);
+				device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader);
+
+				blob->Release();
+			}
+
+
+			D3D11Helper::createBuffer(&mConstantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(mConstant));
+
+		}
+	}
+	void prepare(ID3D11DeviceContext* context)
+	{
+		context->VSSetShader(mVertexShader, NULL, 0);
+		context->IASetInputLayout(mLayout);
+		context->PSSetShader(mPixelShader, NULL, 0);
+		context->VSSetConstantBuffers(0, 1, &mConstantBuffer);
+		context->PSSetConstantBuffers(0, 1, &mConstantBuffer);
+	}
+
+	void update(EffectParameter& paras)
+	{
+		memcpy(mConstant.world, &paras.world, sizeof(XMMATRIX) * 3);
+
+		paras.context->UpdateSubresource(mConstantBuffer, 0, NULL, &mConstant, 0, 0);
+	}
+
+	void clean()
+	{
+		mConstantBuffer->Release();
+		mVertexShader->Release();
+		mLayout->Release();
+		mPixelShader->Release();
+	}
+	int getElementSize()const{ return 4; }
+
+	ID3D11VertexShader* mVertexShader;
+	ID3D11PixelShader* mPixelShader;
+	ID3D11InputLayout* mLayout;
+	ID3D11Buffer* mConstantBuffer;
+};
+
 
 enum Button
 {
@@ -577,8 +649,26 @@ HRESULT initGeometry()
 	std::cout << "Voxelizing...";
 	timer = GetTickCount();
 
-	v.setMesh(para,10);
-	v.voxelize(voxels, 0,para.indexCount);
+	v.setMesh(para,20);
+
+	CowEffect* effect = v.createEffect<CowEffect>();
+
+	for (int i = 0; i < reader.getSubCount(); ++i)
+	{
+		auto& sub = reader.getSub(i);
+		auto mat = reader.getMaterial(sub.material);
+		memcpy(effect->mConstant.color, mat->kd, sizeof(float) * 3);
+		effect->mConstant.color[3] = 1;
+		//effect->mConstant.color = XMFLOAT4(mat->kd[0], mat->kd[1], mat->kd[2],1);
+		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		v.voxelize( sub.indexStart, sub.indexCount);
+
+	}
+
+	v.exportVoxels(voxels);
+
+	//v.voxelize(voxels, 0, para.indexCount);
+
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
@@ -638,11 +728,11 @@ void render()
 		int x = i % voxels.width;
 		int y = i / voxels.width % voxels.height;
 		int z = i/ voxels.width / voxels.height % voxels.depth;
-		int* content = (int*)voxels.datas.data() + i;
-		if (*content != 0)
+		unsigned char* content = (unsigned char*)((int*)voxels.datas.data() + i);
+		if (*(int*)content != 0)
 		{
 			variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2 , y * 2, z * 2));
-			variables.kd = XMFLOAT4(0.5, 0.5, 0.5, 0.5);
+			variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
 			variables.ks = XMFLOAT4(0, 0, 0, 0);
 			variables.ns = 0;
 			

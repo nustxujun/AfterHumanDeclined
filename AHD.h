@@ -23,19 +23,20 @@ namespace AHD
 	class Effect
 	{
 	public :
-		virtual void init(ID3D11Device* device, ID3D11DeviceContext* context) = 0;
-		virtual void prepare(EffectParameter& paras) = 0;
+		virtual void init(ID3D11Device* device) = 0;
+		virtual void prepare(ID3D11DeviceContext* context) = 0;
+		virtual void update(EffectParameter& paras) = 0;
 		virtual void clean() = 0;
 
-		virtual int getElementSize()const = 0;
 	};
 
 	class DefaultEffect :public Effect
 	{
-		void init(ID3D11Device* device, ID3D11DeviceContext* context) ;
-		void prepare(EffectParameter& paras) ;
+	public:
+		void init(ID3D11Device* device) ;
+		void prepare(ID3D11DeviceContext* context);
+		void update(EffectParameter& paras);
 		void clean();
-		int getElementSize()const{ return 4; }
 
 		ID3D11VertexShader* mVertexShader;
 		ID3D11PixelShader* mPixelShader;
@@ -44,6 +45,8 @@ namespace AHD
 
 	public :
 		static const DXGI_FORMAT OUTPUT_FORMAT = DXGI_FORMAT_R32_UINT;
+		static const UINT SLOT = 1;
+		static const size_t ELEM_SIZE = 4;
 	};
 
 	struct MeshWrapper
@@ -77,9 +80,20 @@ namespace AHD
 
 		void setMesh(const MeshWrapper& mesh, float scale);
 		void setVoxelSize(float v);
-		void setEffect(Effect* effect, DXGI_FORMAT outputFormat);
+		void setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize);
 
-		void voxelize(Result& output, int start, int count);
+		void voxelize( int start, int count);
+		void exportVoxels(Result& output);
+
+		template<class T, class ... Args>
+		T* createEffect(Args& ... args)
+		{
+			T* e = new T(args...);
+			mEffects.push_back(e);
+			e->init(mDevice);
+
+			return e;
+		}
 
 	private:
 		template<class T>
@@ -123,8 +137,10 @@ namespace AHD
 		float mVoxelSize = 1.0f;
 		XMMATRIX mTranslation;
 		XMMATRIX mProjection;
-		Effect* mEffect = nullptr;
+		std::vector<Effect*> mEffects;
+		Effect* mCurrentEffect = nullptr;
 		DefaultEffect mDefaultEffect;
+		bool mNeedPrepare = true;
 
 		Interface<ID3D11Device> mDevice;
 		Interface<ID3D11DeviceContext> mContext;
@@ -132,7 +148,9 @@ namespace AHD
 
 		Interface<ID3D11Texture3D> mOutputTexture3D;
 		Interface<ID3D11UnorderedAccessView> mOutputUAV;
-		DXGI_FORMAT mFormat;
+		DXGI_FORMAT mUAVFormat = DXGI_FORMAT_UNKNOWN;
+		size_t mUAVElementSize = 0;
+		UINT mUAVSlot = 1;
 
 		Interface<ID3D11Texture2D> mRenderTarget;
 		Interface<ID3D11RenderTargetView> mRenderTargetView;
