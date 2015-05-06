@@ -9,6 +9,7 @@
 
 #include "Objreader.h"
 #include <vector>
+#include "tiny_obj_loader.h"
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -629,10 +630,15 @@ HRESULT initDevice()
 
 HRESULT initGeometry()
 {
-
-	std::cout << "Loading model...";
+	std::cout << "Loading ...";
 	long timer = GetTickCount();
 	reader = new ObjReader("cow.obj");
+
+	using namespace tinyobj;
+	std::vector<shape_t> shapes;
+	std::vector<material_t> materials;
+
+	//std::string err = LoadObj(shapes, materials, "cow.obj");
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
@@ -649,19 +655,19 @@ HRESULT initGeometry()
 void voxelize(float s )
 {
 	Voxelizer v;
-
-	MeshWrapper para;
-	para.vertexCount = reader->getVertexCount();
-	para.vertexStride = reader->getVertexStride();
-	para.vertices = reader->getVertexBuffer();
-	para.indexStride = reader->getIndexStride();
-	para.indexCount = reader->getIndexCount();
-	para.indexes = reader->getIndexBuffer();
+	auto resource = v.createResource();
+	v.setScale(4);
+	resource->setVertex(reader->getVertexBuffer(),
+						reader->getVertexCount(),
+						reader->getVertexStride());
+	resource->setIndex(reader->getIndexBuffer(),
+					   reader->getIndexCount(),
+					   reader->getIndexStride());
 
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 
-	v.setMesh(para, s);
+	v.setResource(resource);
 
 	CowEffect* effect = v.createEffect<CowEffect>();
 
@@ -672,7 +678,7 @@ void voxelize(float s )
 		memcpy(effect->mConstant.color, mat->kd, sizeof(float) * 3);
 		effect->mConstant.color[3] = 1;
 		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-		v.voxelize(sub.indexStart, sub.indexCount);
+		v.voxelize(resource, sub.indexStart, sub.indexCount);
 
 	}
 

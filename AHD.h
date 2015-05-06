@@ -9,6 +9,31 @@
 
 namespace AHD
 {
+
+	template<class T>
+	class Interface
+	{
+	public:
+		T* pointer;
+
+		Interface() :pointer(nullptr){}
+		Interface(T* p) :pointer(p){}
+		~Interface(){ release(); }
+
+		T* operator ->(){ return pointer; }
+		void operator = (T* p)
+		{
+			if (p == pointer) return;
+			release();
+			pointer = p;
+		}
+		T** operator &(){ return &pointer; }
+		operator T*(){ return pointer; }
+		void release(){ if (pointer) pointer->Release(); pointer = nullptr; }
+		bool isNull()const{ return pointer == nullptr; }
+	};
+
+
 	struct EffectParameter
 	{
 		ID3D11Device* device;
@@ -64,25 +89,82 @@ namespace AHD
 
 	};
 
+	class VoxelResource
+	{
+		friend class Voxelizer;
+
+	public :
+		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
+		void setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
+		void setVertexFromVoxelResource(VoxelResource& res);
+
+		
+		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
+		void setIndex(ID3D11Buffer* indexBuffer, size_t indexCount, size_t indexStride);
+		void removeIndexes();
+		void setSize(int width, int height, int depth);
+
+		~VoxelResource();
+	private:
+		VoxelResource(ID3D11Device* device);
+		void prepare(ID3D11DeviceContext* context);
+
+	private:
+
+		Interface<ID3D11Buffer> mVertexBuffer = nullptr;
+		Interface<ID3D11Buffer> mIndexBuffer = nullptr;
+		size_t mVertexCount = 0;
+		size_t mVertexStride = 0;
+		size_t mPositionOffset = 0;
+		size_t mIndexCount = 0;
+		size_t mIndexStride = 0;
+
+		ID3D11Device* mDevice;
+		bool mNeedPrepare = true;
+		Effect* mCurrentEffect;
+
+		float mOriginalSize[3];
+		float mMin[3];
+	};
+
 	class Voxelizer
 	{
-	public:
+		struct Size
+		{
+			int width;
+			int height;
+			int depth;
+			int maxLength;
 
+			bool operator==(const Size& size)const
+			{
+				return width == size.width &&
+					height == size.height &&
+					depth == size.depth &&
+					maxLength == size.maxLength;
+			}
+		};
+
+
+
+	public:
 		struct Result
 		{
 			std::vector<char> datas;
 			int width, height, depth;
 		};
+
 	public :
 		Voxelizer();
 		Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context);
 		~Voxelizer();
 
-		void setMesh(const MeshWrapper& mesh, float scale);
+		void setScale(float scale);
 		void setVoxelSize(float v);
+		void setResource(VoxelResource* resource);
 		void setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize);
 
-		void voxelize( int start, int count);
+		void voxelize(VoxelResource* res, int start, int count);
 		void exportVoxels(Result& output);
 
 		template<class T, class ... Args>
@@ -95,44 +177,17 @@ namespace AHD
 			return e;
 		}
 
+		VoxelResource* createResource();
+
 	private:
-		template<class T>
-		class Interface
-		{
-		public:
-			T* pointer;
 
-			Interface() :pointer(nullptr){}
-			Interface(T* p) :pointer(p){}
-			~Interface(){ release(); }
-
-			T* operator ->(){ return pointer; }
-			void operator = (T* p)
-			{
-				if (p == pointer) return; 
-				release(); 
-				pointer = p;
-			}
-			T** operator &(){ return &pointer; }
-			operator T*(){ return pointer; }
-			void release(){ if (pointer) pointer->Release(); pointer = nullptr; }
-			bool isNull()const{ return pointer == nullptr; }
-		};
-
-
-		bool prepare();
+		bool prepare(VoxelResource* res);
 		void cleanResource();
 
 	private:
-		struct 
-		{
-			int width = 0;
-			int height = 0;
-			int depth = 0;
-			int maxLength = 0;
-		}mSize;
+		Size mSize;
 
-		MeshWrapper mMesh;
+		VoxelResource* mCurrentResource;
 		float mScale = 1.0f;
 		float mVoxelSize = 1.0f;
 		XMMATRIX mTranslation;
@@ -140,23 +195,20 @@ namespace AHD
 		std::vector<Effect*> mEffects;
 		Effect* mCurrentEffect = nullptr;
 		DefaultEffect mDefaultEffect;
-		bool mNeedPrepare = true;
 
 		Interface<ID3D11Device> mDevice;
-		Interface<ID3D11DeviceContext> mContext;
+		Interface<ID3D11DeviceContext>	 mContext;
 
-
-		Interface<ID3D11Texture3D> mOutputTexture3D;
-		Interface<ID3D11UnorderedAccessView> mOutputUAV;
+		Interface<ID3D11Texture3D> mOutputTexture3D = nullptr;
+		Interface<ID3D11UnorderedAccessView> mOutputUAV = nullptr;
 		DXGI_FORMAT mUAVFormat = DXGI_FORMAT_UNKNOWN;
 		size_t mUAVElementSize = 0;
 		UINT mUAVSlot = 1;
 
-		Interface<ID3D11Texture2D> mRenderTarget;
-		Interface<ID3D11RenderTargetView> mRenderTargetView;
+		Interface<ID3D11Texture2D> mRenderTarget = nullptr;
+		Interface<ID3D11RenderTargetView> mRenderTargetView = nullptr;
 
-		Interface<ID3D11Buffer> mVertexBuffer;
-		Interface<ID3D11Buffer> mIndexBuffer;
+		std::vector<VoxelResource*> mResources;
 	};
 }
 
