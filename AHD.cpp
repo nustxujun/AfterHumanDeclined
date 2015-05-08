@@ -272,20 +272,17 @@ bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
 	if (res == nullptr)
 		return false;
 	mCurrentEffect->prepare(mContext);
-
 	res->prepare(mContext);
 
-	float scale = mScale / mVoxelSize;
+
 
 	if (!aabb)
 	{
 		aabb = &res->mAABB;
 	}
 
-	Vector3 min = aabb->getMin() * scale;
-	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
-		XMMatrixScaling(scale, scale, scale);
 
+	float scale = mScale / mVoxelSize;
 	Vector3 osize = aabb->getSize() * scale;
 	osize += Vector3::UNIT_SCALE;
 	float max = std::max(osize.x, std::max(osize.y, osize.z));
@@ -304,7 +301,9 @@ bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
 	cleanResource();
 
 	//transfrom
-
+	Vector3 min = aabb->getMin() * scale;
+	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
+		XMMatrixScaling(scale, scale, scale);
 	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)mSize.maxLength, 0, (float)mSize.maxLength, 0, (float)mSize.maxLength));
 
 	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mUAVFormat, mSize.width, mSize.height, mSize.depth),
@@ -316,7 +315,6 @@ bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
 	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
 				 "failed to create rendertarget,  cant use gpu voxelizer");
 
-	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
 
 	return true;
 }
@@ -328,14 +326,15 @@ void Voxelizer::setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UI
 	{
 		EXCEPT("uav slot 0 is almost used for rendertarget,cannot be 0.");
 	}
-	mUAVSlot = slot;
-	//effect->prepare(mContext);
-	mCurrentEffect = effect;
-
 	if (mUAVFormat != Format)
 	{
 		cleanResource();
 	}
+
+	mUAVSlot = slot;
+	mCurrentEffect = effect;
+
+
 	mUAVFormat = Format;
 
 	mUAVElementSize = elemSize;
@@ -349,6 +348,8 @@ void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
+	//slot may be changed;
+	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, mUAVSlot, 1, &mOutputUAV, NULL);
 
 	UINT stride = res->mVertexStride;
 	UINT offset = 0;
