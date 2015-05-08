@@ -753,6 +753,7 @@ std::string LoadObj(std::vector<shape_t> &shapes,
                                         faceGroup, material, name, true);
       if (ret) {
         faceGroup.clear();
+		shapes.push_back(shape);//it will fail to load "cow.obj" 
       }
 
 	  shape = shape_t();
