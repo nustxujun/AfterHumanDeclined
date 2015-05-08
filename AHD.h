@@ -6,9 +6,11 @@
 #include <vector>
 #include <string>
 #include <xnamath.h>
+#include "AHDUtils.h"
 
 namespace AHD
 {
+
 
 	template<class T>
 	class Interface
@@ -96,13 +98,12 @@ namespace AHD
 	public :
 		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
 		void setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
-		void setVertexFromVoxelResource(VoxelResource& res);
+		void setVertexFromVoxelResource(VoxelResource* res);
 
 		
 		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
 		void setIndex(ID3D11Buffer* indexBuffer, size_t indexCount, size_t indexStride);
 		void removeIndexes();
-		void setSize(int width, int height, int depth);
 
 		~VoxelResource();
 	private:
@@ -120,30 +121,15 @@ namespace AHD
 		size_t mIndexStride = 0;
 
 		ID3D11Device* mDevice;
-		bool mNeedPrepare = true;
 		Effect* mCurrentEffect;
 
-		float mOriginalSize[3];
-		float mMin[3];
+		AABB mAABB;
+		bool mNeedCalSize = true;
 	};
 
 	class Voxelizer
 	{
-		struct Size
-		{
-			int width;
-			int height;
-			int depth;
-			int maxLength;
 
-			bool operator==(const Size& size)const
-			{
-				return width == size.width &&
-					height == size.height &&
-					depth == size.depth &&
-					maxLength == size.maxLength;
-			}
-		};
 
 
 
@@ -161,10 +147,9 @@ namespace AHD
 
 		void setScale(float scale);
 		void setVoxelSize(float v);
-		void setResource(VoxelResource* resource);
 		void setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize);
 
-		void voxelize(VoxelResource* res, int start, int count);
+		void voxelize(VoxelResource* res, const AABB* aabb = nullptr, size_t drawBegin = 0, size_t drawCount = ~0);
 		void exportVoxels(Result& output);
 
 		template<class T, class ... Args>
@@ -181,10 +166,43 @@ namespace AHD
 
 	private:
 
-		bool prepare(VoxelResource* res);
+		bool prepare(VoxelResource* res, const AABB* range);
 		void cleanResource();
 
 	private:
+		struct Size
+		{
+			size_t width;
+			size_t  height;
+			size_t  depth;
+			size_t  maxLength;
+
+			bool operator==(const Size& size)const
+			{
+				return width == size.width &&
+					height == size.height &&
+					depth == size.depth &&
+					maxLength == size.maxLength;
+			}
+
+			Size(size_t  w, size_t  h, size_t  d, size_t  m)
+				:width(w), height(h), depth(d), maxLength(m)
+			{
+			}
+
+			Size(size_t  w, size_t  h, size_t  d)
+				:width(w), height(h), depth(d)
+			{
+				maxLength = max(w, max(h, d));
+			}
+
+			Size()
+				:width(0), height(0), depth(0), maxLength(0)
+			{
+
+			}
+		};
+
 		Size mSize;
 
 		VoxelResource* mCurrentResource;

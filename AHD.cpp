@@ -6,6 +6,7 @@
 #include <d3dcompiler.h>
 
 #undef max
+#undef min
 
 using namespace AHD;
 
@@ -82,7 +83,6 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 	mVertexCount = vertexCount;
 	mPositionOffset = posoffset;
 
-	AABB aabb;
 	//calculate the max size
 	size_t buffersize = vertexCount * vertexStride;
 	{
@@ -91,23 +91,24 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 		for (; begin != end; begin += vertexStride)
 		{
 			Vector3 v = (*(const Vector3*)begin) ;
-			aabb.merge(v);
+			mAABB.merge(v);
 		}
 	}
-	memcpy(&mOriginalSize, &aabb.getSize(), sizeof(mOriginalSize));
-	memcpy(&mMin, &aabb.getMin(), sizeof(mMin));
-	
+
+	mNeedCalSize = false;
+
 	mVertexBuffer.release();
 	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, vertexCount * vertexStride, vertices),
 				 "fail to create vertex buffer,  cant use gpu voxelizer");
 
-	mNeedPrepare = true;
 
 }
 
-void VoxelResource::setVertexFromVoxelResource(VoxelResource& res)
+void VoxelResource::setVertexFromVoxelResource(VoxelResource* res)
 {
-	setVertex(res.mVertexBuffer, res.mVertexCount, res.mVertexStride, res.mPositionOffset);
+	mAABB = res->mAABB;
+
+	setVertex(res->mVertexBuffer, res->mVertexCount, res->mVertexStride, res->mPositionOffset);
 }
 
 void VoxelResource::setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, size_t vertexStride, size_t posoffset )
@@ -120,7 +121,7 @@ void VoxelResource::setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, si
 	mVertexBuffer.release();
 	mVertexBuffer = vertexBuffer;
 
-	mNeedPrepare = true;
+	mNeedCalSize = true;
 }
 
 void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t indexStride)
@@ -143,21 +144,10 @@ void VoxelResource::setIndex(ID3D11Buffer* indexBuffer, size_t indexCount, size_
 	mIndexBuffer = indexBuffer;
 }
 
-
-void VoxelResource::setSize(int width, int height, int depth)
-{
-	mOriginalSize[0] = width;
-	mOriginalSize[1] = height;
-	mOriginalSize[2] = depth;
-
-	mNeedPrepare = true;
-}
-
 VoxelResource::VoxelResource(ID3D11Device* device)
 	:mDevice(device)
 {
-	memset(mOriginalSize, 0, sizeof(mOriginalSize));
-	memset(mMin, 0, sizeof(mMin));
+
 }
 
 VoxelResource::~VoxelResource()
@@ -167,12 +157,7 @@ VoxelResource::~VoxelResource()
 
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
-	auto isValid = [](float float3[3])
-	{
-		return float3[0] != 0 && float3[1] != 0 && float3[2] != 0;
-	};
-
-	if (isValid(mOriginalSize) && isValid(mMin))
+	if (!mNeedCalSize)
 		return;
 
 	if (mVertexBuffer == nullptr)
@@ -201,14 +186,14 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 		context->Unmap(buffer, 0);
 	};
 
-	if (desc.CPUAccessFlags | D3D11_CPU_ACCESS_READ)
+	if ((desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ) != 0)
 	{
 		calSize(context, mVertexBuffer, mVertexCount, mVertexStride, mPositionOffset);
 	}
 	else
 	{
 		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		desc.MiscFlags = 0;
+		desc.BindFlags = 0;
 		desc.Usage = D3D11_USAGE_STAGING;
 		ID3D11Buffer* tmp = 0;
 		CHECK_RESULT(mDevice->CreateBuffer(&desc, nullptr, &tmp),
@@ -271,12 +256,6 @@ void Voxelizer::cleanResource()
 
 }
 
-void Voxelizer::setResource(VoxelResource* resource)
-{
-	mCurrentResource = resource;
-}
-
-
 
 void Voxelizer::setVoxelSize(float v)
 {
@@ -288,44 +267,44 @@ void Voxelizer::setScale(float v)
 	mScale = v;
 }
 
-bool Voxelizer::prepare(VoxelResource* res)
+bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
 {
 	if (res == nullptr)
 		return false;
+	mCurrentEffect->prepare(mContext);
 
 	res->prepare(mContext);
 
-	float* osize = res->mOriginalSize;
 	float scale = mScale / mVoxelSize;
-	float max = std::max(osize[0], std::max(osize[1], osize[2])) * scale;
+
+	if (!aabb)
+	{
+		aabb = &res->mAABB;
+	}
+
+	Vector3 min = aabb->getMin() * scale;
+	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
+		XMMatrixScaling(scale, scale, scale);
+
+	Vector3 osize = aabb->getSize() * scale;
+	osize += Vector3::UNIT_SCALE;
+	float max = std::max(osize.x, std::max(osize.y, osize.z));
 	Size size =
-	{ 
-		std::ceil(osize[0] * scale), 
-		std::ceil(osize[1] * scale),
-		std::ceil(osize[2] * scale),
-		std::ceil( max )
+	{
+		(size_t)std::ceil(osize.x),
+		(size_t)std::ceil(osize.y),
+		(size_t)std::ceil(osize.z),
+		(size_t)std::ceil(max)
 	};
 
 	if (!mRenderTarget.isNull() && !mOutputTexture3D.isNull() && mSize == size)
 		return true;
 	mSize = size;
-	Vector3 tran = { -res->mMin[0] * scale, -res->mMin[1] * scale, -res->mMin[2] * scale };
+
 	cleanResource();
 
-	if (mCurrentEffect == nullptr)
-	{
-		setEffectAndUAVParameters(&mDefaultEffect, 
-								  DefaultEffect::OUTPUT_FORMAT, 
-								  DefaultEffect::SLOT, 
-								  DefaultEffect::ELEM_SIZE);
-	}
-
-	mCurrentEffect->prepare(mContext);
-
-
 	//transfrom
-	mTranslation = XMMatrixTranspose(XMMatrixTranslation(tran.x, tran.y, tran.z)) *
-		XMMatrixScaling(scale, scale, scale);
+
 	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)mSize.maxLength, 0, (float)mSize.maxLength, 0, (float)mSize.maxLength));
 
 	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mUAVFormat, mSize.width, mSize.height, mSize.depth),
@@ -337,6 +316,7 @@ bool Voxelizer::prepare(VoxelResource* res)
 	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
 				 "failed to create rendertarget,  cant use gpu voxelizer");
 
+	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
 
 	return true;
 }
@@ -363,9 +343,9 @@ void Voxelizer::setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UI
 }
 
 
-void Voxelizer::voxelize(VoxelResource* res, int start, int count)
+void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin , size_t drawCount)
 {
-	if (!prepare(res))
+	if (!prepare(res, range))
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
@@ -374,7 +354,9 @@ void Voxelizer::voxelize(VoxelResource* res, int start, int count)
 	UINT offset = 0;
 	mContext->IASetVertexBuffers(0, 1, &res->mVertexBuffer, &stride, &offset);
 	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, 1, 1, &mOutputUAV, NULL);
+
+	int start = std::max((size_t)0, drawBegin);
+	int count = std::min((size_t)res->mVertexCount, drawCount);
 
 	bool useIndex = res->mIndexBuffer != nullptr;
 	if (useIndex)
@@ -389,6 +371,8 @@ void Voxelizer::voxelize(VoxelResource* res, int start, int count)
 			break;
 		}
 		mContext->IASetIndexBuffer(res->mIndexBuffer, format, 0);
+
+		count = res->mIndexCount;
 	}
 
 	//no need to cull
