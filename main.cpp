@@ -27,19 +27,21 @@ ID3D11RenderTargetView* renderTargetView = NULL;
 ID3D11VertexShader*     vertexShader = NULL;
 ID3D11PixelShader*      pixelShader = NULL;
 ID3D11InputLayout*      vertexLayout = NULL;
-ID3D11Buffer*           vertexBuffer = NULL;
-ID3D11Buffer*           indexBuffer = NULL;
 ID3D11Buffer*			constantBuffer = NULL;
 ID3D11Buffer*			variableBuffer = NULL;
 ID3D11Texture2D*        depthStencil = NULL;
 ID3D11DepthStencilView* depthStencilView = NULL;
 ID3D11SamplerState*		samplerLinear = NULL;
+ID3D11RasterizerState* rasterizerState = NULL;
 
+ID3D11Buffer*		optimizedVertices = NULL;
+ID3D11Buffer*		optimizedIndexes = NULL;
+size_t drawCount = 0;
 
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 10.0;
+float scale = 0.05;
 
 struct Material
 {
@@ -547,75 +549,39 @@ HRESULT initDevice()
 	// Create vertex buffer
 	SimpleVertex vertices[] =
 	{
-		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
 		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
 
-		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
 
-		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
 
-		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
 		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
 
-		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
 
-		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
 		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
 	};
 
 
 
-	hr = createBuffer(&vertexBuffer, D3D11_BIND_VERTEX_BUFFER, sizeof(SimpleVertex) * 24, vertices);
-	if (FAILED(hr))
-		return hr;
-
-	// Set vertex buffer
-	UINT stride = sizeof(SimpleVertex);
-	UINT offset = 0;
-	context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-
-
-	WORD indices[] =
-	{
-		3, 1, 0,
-		2, 1, 3,
-
-		6, 4, 5,
-		7, 4, 6,
-
-		11, 9, 8,
-		10, 9, 11,
-
-		14, 12, 13,
-		15, 12, 14,
-
-		19, 17, 16,
-		18, 17, 19,
-
-		22, 20, 21,
-		23, 20, 22
-	};
-
-	hr = createBuffer(&indexBuffer, D3D11_BIND_INDEX_BUFFER, sizeof(WORD) * 36, indices);
-	if (FAILED(hr))
-		return hr;
-
-	context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R16_UINT, 0);
 
 	D3D11_SAMPLER_DESC sampDesc;
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
@@ -628,6 +594,20 @@ HRESULT initDevice()
 	sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
 	hr = device->CreateSamplerState(&sampDesc, &samplerLinear);
 
+	D3D11_RASTERIZER_DESC desc;
+	desc.FillMode = D3D11_FILL_SOLID;
+	desc.CullMode = D3D11_CULL_FRONT;
+	desc.FrontCounterClockwise = false;
+	desc.DepthBias = 0;
+	desc.DepthBiasClamp = 0;
+	desc.SlopeScaledDepthBias = 0;
+	desc.DepthClipEnable = true;
+	desc.ScissorEnable = false;
+	desc.MultisampleEnable = false;
+	desc.AntialiasedLineEnable = false;
+
+	device->CreateRasterizerState(&desc, &rasterizerState);
+	context->RSSetState(rasterizerState);
 	return S_OK;
 }
 
@@ -637,7 +617,7 @@ HRESULT initGeometry()
 	std::cout << "Loading ...";
 	long timer = GetTickCount();
 
-	LoadObj(shapes, materials, "cup.obj");
+	LoadObj(shapes, materials, "sponza.obj");
 
 	//std::string err = LoadObj(shapes, materials, "cow.obj");
 
@@ -649,14 +629,14 @@ HRESULT initGeometry()
 
 	
 
-	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
+	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 2, 0.0f);
 	return S_OK;
 
 }
 
 void buildSurface()
 {
-	enum Face
+	enum FaceType
 	{
 		P_X = 1,
 		P_Y = 1 << 1,
@@ -671,26 +651,38 @@ void buildSurface()
 		int x, y, z;
 	};
 
+	enum Check
+	{
+		C_NONE = 0,
+		C_INSERT,
+	};
+
 	struct Block
 	{
 		Pos pos;
 		int face;
 		int color;
+		Check check;
 	};
+
+
 
 	const char* data = voxels.datas.data();
 	int width = voxels.width;
 	int height = voxels.height;
 	int depth = voxels.depth;
+	int count = width * height * depth;
+
+	std::vector<Block> blocks(count);
 
 	auto getVoxel = [&data, width, height, depth](int x, int y, int z)->int*
 	{
 		if (x < width && y < height && z < depth)
-			return (int*)data + x + y * width + z * height;
+			return (int*)data + x + y * width + z * height * width;
 		return nullptr;
 	};
 
-	auto checkBlock = [](Block& b1, Block& b2, Face face)
+	auto checkBlock = [](Block& b1, Block& b2, FaceType face)
 	{
 		if (b1.color == b2.color )
 			return;
@@ -710,19 +702,94 @@ void buildSurface()
 			b1.face |= face;
 	};
 
-
-
-	std::list<Block> blocks;
-
-	blocks.push_back({ { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0) });
-
-	while (!blocks.empty())
+	auto getIndex = [width, height](int x, int y, int z)
 	{
-		Block& b = *blocks.begin();
+		return x + y * width + z * height * width;
+	};
+
+	struct Vertex
+	{
+		Vector3 p;
+		Vector3 n;
+	};
+
+	struct Face
+	{
+		Vertex verts[4];
+		
+		void movePos(const Pos& offset)
+		{
+			for (auto& i : verts)
+			{
+				i.p.x += offset.x;
+				i.p.y += offset.y;
+				i.p.z += offset.z;
+			}
+		}
+	};
+	Face cube[] =
+	{
+		//P_X
+		{ 
+			Vector3(1, 0, 0), Vector3::UNIT_X,
+			Vector3(1, 0, 1), Vector3::UNIT_X, 
+			Vector3(1, 1, 1), Vector3::UNIT_X,
+			Vector3(1, 1, 0), Vector3::UNIT_X 
+		},
+		//P_Y
+		{ 
+			Vector3(0, 1, 0), Vector3::UNIT_Y, 
+			Vector3(1, 1, 0), Vector3::UNIT_Y, 
+			Vector3(1, 1, 1), Vector3::UNIT_Y, 
+			Vector3(0, 1, 1), Vector3::UNIT_Y 
+		},
+		//P_Z
+		{
+			Vector3(0, 0, 1), Vector3::UNIT_Z, 
+			Vector3(0, 1, 1), Vector3::UNIT_Z, 
+			Vector3(1, 1, 1), Vector3::UNIT_Z, 
+			Vector3(1, 0, 1), Vector3::UNIT_Z 
+		},
+		//N_X
+		{ 
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_X,
+			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_X,
+			Vector3(0, 1, 1), Vector3::NEGATIVE_UNIT_X,
+			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_X 
+		},
+		//N_Y
+		{ 
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Y, 
+			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_Y, 
+			Vector3(1, 0, 1), Vector3::NEGATIVE_UNIT_Y, 
+			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Y 
+		},
+		//N_Z
+		{
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Z, 
+			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Z, 
+			Vector3(1, 1, 0), Vector3::NEGATIVE_UNIT_Z, 
+			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_Z 
+		},
+
+	};
+
+	
+
+	std::list<Block*> testQueue;
+	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
+	testQueue.push_back(&blocks[0]);
+
+	std::vector<Face> faces;
+	std::vector<size_t> indexes;
+
+	while (!testQueue.empty())
+	{
+		Block& b = **testQueue.begin();
 		const struct
 		{
 			Pos p;
-			Face f;
+			FaceType f;
 		}pos[3] =
 		{
 			{ b.pos.x + 1, b.pos.y, b.pos.z, P_X },
@@ -736,14 +803,57 @@ void buildSurface()
 			int * color = getVoxel(p.x, p.y, p.z);
 			if (color == nullptr)
 				continue;
-			Block next = { p, 0, *color };
+			Block& next = blocks[getIndex(p.x, p.y, p.z)];
+			if (next.check != C_INSERT)
+			{
+				testQueue.push_back(&next);
+			}
+			next = { p, next.face | (p.x ? 0 : N_X) | (p.y ? 0 : N_Y) | (p.z ? 0 : N_Z), *color, C_INSERT };
 			checkBlock(b, next, pos[i].f);
-			blocks.push_back(next);
+
+		}
+		if (b.color != 0)
+		{
+			for (int i = 0; i < 6; ++i)
+			{
+				int mask = 1 << i;
+				if ((mask & b.face) == 0)
+					continue;
+
+				size_t indexBegin = faces.size() * 4;
+				size_t indexSample[]=
+				{
+					0,1,2,
+					0,2,3,
+				};
+				for (auto i : indexSample)
+				{
+					indexes.push_back(indexBegin + i);
+				}
+
+				Face face = cube[i];
+				face.movePos(b.pos);
+				faces.push_back(face);
+
+
+			}
 		}
 
-
-		blocks.pop_front();
+		testQueue.pop_front();
 	}
+
+	if (optimizedVertices)
+		optimizedVertices->Release();
+	HRESULT hr = createBuffer(&optimizedVertices, D3D11_BIND_VERTEX_BUFFER, faces.size() * sizeof(Face), faces.data());
+	UINT stride = sizeof(Vertex);
+	UINT offset = 0;
+	context->IASetVertexBuffers(0, 1, &optimizedVertices, &stride, &offset);
+
+	if (optimizedIndexes)
+		optimizedIndexes->Release();
+	hr = createBuffer(&optimizedIndexes, D3D11_BIND_INDEX_BUFFER, sizeof(size_t)* indexes.size(), indexes.data());
+	drawCount = indexes.size();
+	context->IASetIndexBuffer(optimizedIndexes, DXGI_FORMAT_R32_UINT, 0);
 
 }
 
@@ -751,6 +861,10 @@ void voxelize(float s)
 {
 	Voxelizer v;
 	v.setScale(s);
+
+	std::cout << "Voxelizing...";
+	long timer = GetTickCount();
+
 
 	struct Sub
 	{
@@ -775,20 +889,18 @@ void voxelize(float s)
 		
 	}
 
-	CowEffect* effect = v.createEffect<CowEffect>();
+	//CowEffect* effect = v.createEffect<CowEffect>();
 
-	std::cout << "Voxelizing...";
-	long timer = GetTickCount();
 	for (int i = 0; i < reses.size(); ++i)
 	{
-		auto& matidvec = shapes[i].mesh.material_ids;
-		if (!matidvec.empty())
-		{
-			memcpy(effect->mConstant.color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
-			effect->mConstant.color[3] = 1;
-			v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		//auto& matidvec = shapes[i].mesh.material_ids;
+		//if (!matidvec.empty())
+		//{
+		//	memcpy(effect->mConstant.color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
+		//	effect->mConstant.color[3] = 1;
+		//	v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
 
-		}
+		//}
 
 		v.voxelize(reses[i], &aabb);
 
@@ -798,9 +910,12 @@ void voxelize(float s)
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
+	std::cout << "Processing Vertices...";
+	timer = GetTickCount();
 	buildSurface();
+	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
-	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
+	target.pos = XMFLOAT3(-voxels.width / 2, -voxels.height / 2, -voxels.depth / 2);
 }
 
 
@@ -809,13 +924,14 @@ void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
 
+	SAFE_RELEASE(optimizedVertices);
+	SAFE_RELEASE(optimizedIndexes);
+	SAFE_RELEASE(rasterizerState);
 	SAFE_RELEASE(samplerLinear);
 	SAFE_RELEASE(depthStencil);
 	SAFE_RELEASE(depthStencilView);
 	SAFE_RELEASE(variableBuffer);
 	SAFE_RELEASE(constantBuffer);
-	SAFE_RELEASE(vertexBuffer);
-	SAFE_RELEASE(indexBuffer);
 	SAFE_RELEASE(vertexLayout);
 	SAFE_RELEASE(pixelShader);
 	SAFE_RELEASE(vertexShader);
@@ -846,29 +962,37 @@ void render()
 
 	context->PSSetSamplers(0, 1, &samplerLinear);
 
-	int count = voxels.width * voxels.height * voxels.depth;
-	for (int i = 0; i < count; ++i)
-	{
-		int x = i % voxels.width;
-		int y = i / voxels.width % voxels.height;
-		int z = i/ voxels.width / voxels.height % voxels.depth;
-		unsigned char* content = (unsigned char*)((int*)voxels.datas.data() + i);
-		if (*(int*)content != 0)
-		{
-			variables.local = XMMatrixTranspose(XMMatrixTranslation(x * 2 , y * 2, z * 2));
-			variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
-			variables.ks = XMFLOAT4(0, 0, 0, 0);
-			variables.ns = 0;
-			
-			context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
-			
-			context->DrawIndexed(36, 0, 0);
-		}
-	
+	//int count = voxels.width * voxels.height * voxels.depth;
+	//for (int i = 0; i < count; ++i)
+	//{
+	//	int x = i % voxels.width;
+	//	int y = i / voxels.width % voxels.height;
+	//	int z = i/ voxels.width / voxels.height % voxels.depth;
+	//	unsigned char* content = (unsigned char*)((int*)voxels.datas.data() + i);
+	//	if (*(int*)content != 0)
+	//	{
+	//		variables.local = XMMatrixTranspose(XMMatrixTranslation(x  , y , z ));
+	//		//variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
+	//		variables.kd = XMFLOAT4(0.5, 0.5, 0.5, 1);
+	//		variables.ks = XMFLOAT4(0, 0, 0, 0);
+	//		variables.ns = 0;
+	//		
+	//		context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
+	//		
+	//		context->DrawIndexed(36, 0, 0);
+	//	}
+	//
 
-		
-	}
-	
+	//	
+	//}
+
+	variables.local = XMMatrixIdentity();
+	//variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
+	variables.kd = XMFLOAT4(0.5, 0.5, 0.5, 1);
+	variables.ks = XMFLOAT4(0, 0, 0, 0);
+	variables.ns = 0;
+	context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
+	context->DrawIndexed(drawCount, 0, 0);
 	swapChain->Present(0, 0);
 }
 
