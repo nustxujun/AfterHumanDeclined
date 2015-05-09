@@ -121,7 +121,6 @@ namespace AHD
 		size_t mIndexStride = 0;
 
 		ID3D11Device* mDevice;
-		Effect* mCurrentEffect;
 
 		AABB mAABB;
 		bool mNeedCalSize = true;

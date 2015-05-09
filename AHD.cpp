@@ -236,6 +236,11 @@ Voxelizer::~Voxelizer()
 {
 	cleanResource();
 
+	for (auto i : mResources)
+	{
+		delete i;
+	}
+
 	mDefaultEffect.clean();
 	for (auto i : mEffects)
 	{
@@ -243,8 +248,6 @@ Voxelizer::~Voxelizer()
 		delete i;
 	}
 
-	mContext->Release();
-	mDevice->Release();
 }
 
 void Voxelizer::cleanResource()
