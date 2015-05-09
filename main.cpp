@@ -36,10 +36,9 @@ ID3D11SamplerState*		samplerLinear = NULL;
 
 
 Voxelizer::Result		voxels;
-ObjReader* reader;
 std::vector<shape_t> shapes;
-//std::vector<material_t> materials;
-float scale = 4.0;
+std::vector<material_t> materials;
+float scale = 10.0;
 
 struct Material
 {
@@ -48,7 +47,7 @@ struct Material
 	float ns = 0;
 };
 
-std::vector<Material> materials;
+//std::vector<Material> materials;
 
 
 
@@ -636,10 +635,8 @@ HRESULT initGeometry()
 {
 	std::cout << "Loading ...";
 	long timer = GetTickCount();
-	reader = new ObjReader("cube.obj");
-	std::vector<material_t> materials;
 
-	LoadObj(shapes, materials, "cow.obj");
+	LoadObj(shapes, materials, "cup.obj");
 
 	//std::string err = LoadObj(shapes, materials, "cow.obj");
 
@@ -647,66 +644,25 @@ HRESULT initGeometry()
 
 	voxelize(scale);
 
+	
 
-
-	return S_OK;
-
-
-}
-
-
-void voxelize1(float s)
-{
-	Voxelizer v;
-	auto resource = v.createResource();
-	v.setScale(4);
-	resource->setVertex(reader->getVertexBuffer(),
-						reader->getVertexCount(),
-						reader->getVertexStride());
-	resource->setIndex(reader->getIndexBuffer(),
-					   reader->getIndexCount(),
-					   reader->getIndexStride());
-
-	std::cout << "Voxelizing...";
-	long timer = GetTickCount();
-
-	//v.setResource(resource);
-
-	//CowEffect* effect = v.createEffect<CowEffect>();
-
-	//for (int i = 0; i < reader->getSubCount(); ++i)
-	//{
-	//	auto& sub = reader->getSub(i);
-	//	auto mat = reader->getMaterial(sub.material);
-	//	memcpy(effect->mConstant.color, mat->kd, sizeof(float) * 3);
-	//	effect->mConstant.color[3] = 1;
-	//	v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-	//	v.voxelize(resource);
-
-	//}
-
-	for (int i = 0; i < reader->getSubCount(); ++i)
-	{
-		auto res = v.createResource();
-		res->setVertexFromVoxelResource(resource);
-		res->setIndex(((short*)reader->getIndexBuffer()) + reader->getSub(i).indexStart, reader->getSub(i).indexCount, reader->getIndexStride());
-		v.voxelize(res);
-	}
-
-	//v.voxelize(resource);
-
-	v.exportVoxels(voxels);
-	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
-
-	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
+	
 
 	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
+	return S_OK;
+
 }
 
-void voxelize2(float s)
+void voxelize(float s)
 {
 	Voxelizer v;
-	v.setScale(10);
+	v.setScale(s);
+
+	struct Sub
+	{
+		VoxelResource* res;
+	};
+
 	std::vector<VoxelResource*> reses;
 	AABB aabb;
 	for (auto& i : shapes)
@@ -725,35 +681,36 @@ void voxelize2(float s)
 		
 	}
 
+	CowEffect* effect = v.createEffect<CowEffect>();
+
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 	for (int i = 0; i < reses.size(); ++i)
 	{
+		auto& matidvec = shapes[i].mesh.material_ids;
+		if (!matidvec.empty())
+		{
+			memcpy(effect->mConstant.color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
+			effect->mConstant.color[3] = 1;
+			v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+
+		}
+
 		v.voxelize(reses[i], &aabb);
+
 	}
-
-
 
 	v.exportVoxels(voxels);
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
 	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
-
-	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 3, 0.0f);
-}
-
-
-void voxelize(float s)
-{
-	voxelize2(s);
 }
 
 
 void cleanDevice()
 {
 #define SAFE_RELEASE(x) if (x) (x)->Release();
-	delete reader;
 
 	SAFE_RELEASE(samplerLinear);
 	SAFE_RELEASE(depthStencil);
