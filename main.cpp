@@ -9,6 +9,7 @@
 
 #include "Objreader.h"
 #include <vector>
+#include <list>
 #include "tiny_obj_loader.h"
 #include "AHDUtils.h"
 
@@ -653,6 +654,99 @@ HRESULT initGeometry()
 
 }
 
+void buildSurface()
+{
+	enum Face
+	{
+		P_X = 1,
+		P_Y = 1 << 1,
+		P_Z = 1 << 2,
+		N_X = 1 << 3,
+		N_Y = 1 << 4,
+		N_Z = 1 << 5,
+	};
+
+	struct Pos
+	{
+		int x, y, z;
+	};
+
+	struct Block
+	{
+		Pos pos;
+		int face;
+		int color;
+	};
+
+	const char* data = voxels.datas.data();
+	int width = voxels.width;
+	int height = voxels.height;
+	int depth = voxels.depth;
+
+	auto getVoxel = [&data, width, height, depth](int x, int y, int z)->int*
+	{
+		if (x < width && y < height && z < depth)
+			return (int*)data + x + y * width + z * height;
+		return nullptr;
+	};
+
+	auto checkBlock = [](Block& b1, Block& b2, Face face)
+	{
+		if (b1.color == b2.color )
+			return;
+
+		if (b1.color == 0)
+		{
+			switch (face)
+			{
+			case P_X: b2.face |= N_X; break;
+			case P_Y: b2.face |= N_Y; break;
+			case P_Z: b2.face |= N_Z; break;
+			default:
+				assert(0);
+			}
+		}
+		else
+			b1.face |= face;
+	};
+
+
+
+	std::list<Block> blocks;
+
+	blocks.push_back({ { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0) });
+
+	while (!blocks.empty())
+	{
+		Block& b = *blocks.begin();
+		const struct
+		{
+			Pos p;
+			Face f;
+		}pos[3] =
+		{
+			{ b.pos.x + 1, b.pos.y, b.pos.z, P_X },
+			{ b.pos.x, b.pos.y + 1, b.pos.z, P_Y },
+			{ b.pos.x, b.pos.y, b.pos.z + 1, P_Z }
+		};
+
+		for (int i = 0; i < 3; ++i)
+		{
+			const Pos& p = pos[i].p;
+			int * color = getVoxel(p.x, p.y, p.z);
+			if (color == nullptr)
+				continue;
+			Block next = { p, 0, *color };
+			checkBlock(b, next, pos[i].f);
+			blocks.push_back(next);
+		}
+
+
+		blocks.pop_front();
+	}
+
+}
+
 void voxelize(float s)
 {
 	Voxelizer v;
@@ -704,8 +798,11 @@ void voxelize(float s)
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
+	buildSurface();
+
 	target.pos = XMFLOAT3(-voxels.width, -voxels.height, -voxels.depth);
 }
+
 
 
 void cleanDevice()
