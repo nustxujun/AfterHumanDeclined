@@ -9,27 +9,28 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
     </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="3Party">
+      <UniqueIdentifier>{b1a87fa7-f913-4c58-abb5-33fbaa374a4c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AHD.h">
+    <ClInclude Include="ring.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="AHDUtils.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="AHDd3d11Helper.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="3Party\tiny_obj_loader.h">
+      <Filter>3Party</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AHD.cpp">
+    <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="AHDUtils.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="AHDd3d11Helper.cpp">
-      <Filter>源文件</Filter>
+    <ClCompile Include="3Party\tiny_obj_loader.cc">
+      <Filter>3Party</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

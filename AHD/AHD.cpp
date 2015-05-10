@@ -474,10 +474,10 @@ void Voxelizer::exportVoxels(Result& result)
 	int stride = mUAVElementSize * mSize.width;
 	result.datas.reserve(stride * mSize.height * mSize.depth);
 	char* begin = result.datas.data();
-	for (int z = 0; z < mSize.depth; ++z)
+	for (size_t z = 0; z < mSize.depth; ++z)
 	{
 		const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-		for (int y = 0; y < mSize.height; ++y)
+		for (size_t y = 0; y < mSize.height; ++y)
 		{
 			memcpy(begin, depth + mr.RowPitch * y, stride);
 			begin += stride;

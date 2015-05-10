@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include <Windows.h>
 #include "AHD.h"
 #include <d3d11.h>
 #include <d3dx11.h>
@@ -961,7 +961,7 @@ void render()
 	swapChain->Present(0, 0);
 }
 
-int _tmain(int argc, _TCHAR* argv[])
+int main()
 {
 	if (FAILED(initWindow(0, SW_SHOW)))
 		return 0;
