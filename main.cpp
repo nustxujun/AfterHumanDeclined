@@ -7,9 +7,9 @@
 #include <iostream>
 #include "AHDd3d11Helper.h"
 
-#include "Objreader.h"
 #include <vector>
 #include <list>
+#include <deque>
 #include "tiny_obj_loader.h"
 #include "AHDUtils.h"
 
@@ -776,7 +776,7 @@ void buildSurface()
 
 	
 
-	std::list<Block*> testQueue;
+	std::deque<Block*> testQueue;
 	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
 	testQueue.push_back(&blocks[0]);
 
