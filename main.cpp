@@ -12,6 +12,7 @@
 #include <deque>
 #include "tiny_obj_loader.h"
 #include "AHDUtils.h"
+#include "ring.h"
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -41,7 +42,7 @@ size_t drawCount = 0;
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 0.05;
+float scale = 0.08;
 
 struct Material
 {
@@ -546,42 +547,6 @@ HRESULT initDevice()
 	context->PSSetConstantBuffers(0, 1, &constantBuffer);
 	context->PSSetConstantBuffers(1, 1, &variableBuffer);
 
-	// Create vertex buffer
-	SimpleVertex vertices[] =
-	{
-		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-
-		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-
-		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-
-		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-
-		{ XMFLOAT3(0.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-		{ XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
-
-		{ XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, 0.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(0.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-	};
-
-
-
 
 	D3D11_SAMPLER_DESC sampDesc;
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
@@ -634,7 +599,7 @@ HRESULT initGeometry()
 
 }
 
-void buildSurface()
+void optimizeVoxels()
 {
 	enum FaceType
 	{
@@ -727,7 +692,7 @@ void buildSurface()
 			}
 		}
 	};
-	Face cube[] =
+	const Face cube[] =
 	{
 		//P_X
 		{ 
@@ -776,7 +741,7 @@ void buildSurface()
 
 	
 
-	std::deque<Block*> testQueue;
+	ring<Block*> testQueue(1024);
 	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
 	testQueue.push_back(&blocks[0]);
 
@@ -821,7 +786,7 @@ void buildSurface()
 					continue;
 
 				size_t indexBegin = faces.size() * 4;
-				size_t indexSample[]=
+				const size_t indexSample[]=
 				{
 					0,1,2,
 					0,2,3,
@@ -910,9 +875,9 @@ void voxelize(float s)
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
-	std::cout << "Processing Vertices...";
+	std::cout << "Optimizing...";
 	timer = GetTickCount();
-	buildSurface();
+	optimizeVoxels();
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
 	target.pos = XMFLOAT3(-voxels.width / 2, -voxels.height / 2, -voxels.depth / 2);

@@ -33,14 +33,14 @@
     <ClInclude Include="AHDUtils.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ObjReader.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="AHDd3d11Helper.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="3Party\tiny_obj_loader.h">
       <Filter>3Party</Filter>
+    </ClInclude>
+    <ClInclude Include="ring.h">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -51,9 +51,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="AHDUtils.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="ObjReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="AHDd3d11Helper.cpp">
