@@ -830,12 +830,6 @@ void voxelize(float s)
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 
-
-	struct Sub
-	{
-		VoxelResource* res;
-	};
-
 	std::vector<VoxelResource*> reses;
 	AABB aabb;
 	for (auto& i : shapes)
