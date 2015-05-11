@@ -13,6 +13,7 @@
 #include "tiny_obj_loader.h"
 #include "AHDUtils.h"
 #include "ring.h"
+#include "TextureLoader.h"
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -42,7 +43,7 @@ size_t drawCount = 0;
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 0.05;
+float scale = 10;
 
 struct Material
 {
@@ -114,7 +115,7 @@ public:
 			{
 				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 				{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-
+				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 			};
 
 			ID3DBlob* blob;
@@ -587,7 +588,7 @@ HRESULT initGeometry()
 	std::cout << "Loading ...";
 	long timer = GetTickCount();
 
-	LoadObj(shapes, materials, "sponza.obj");
+	LoadObj(shapes, materials, "cup.obj");
 
 	//std::string err = LoadObj(shapes, materials, "cow.obj");
 
@@ -839,21 +840,37 @@ void voxelize(float s)
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 
-	std::vector<VoxelResource*> reses;
+	struct Sub
+	{
+		VoxelResource* vr;
+		std::string tex;
+	};
+
+	std::map<std::string, ID3D11ShaderResourceView*> textureMap;
+
+	std::vector<Sub> reses;
 	AABB aabb;
 	std::vector<char> buffer;
 	for (auto& i : shapes)
 	{
 		float color[4] = {0};
+		std::string texName;
 		auto& matidvec = i.mesh.material_ids;
 		if (!matidvec.empty())
 		{
-			memcpy(color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
+			auto& mat = materials[matidvec[0]];
+			memcpy(color, mat.diffuse, sizeof(float)* 3);
 			color[3] = 1;
+			texName = mat.diffuse_texname;
+			if (!texName.empty() && textureMap.find(texName) == textureMap.end())
+			{
+				textureMap[texName] = TextureLoader::createTexture(device, texName.c_str());
+			}
 		}
 
 		size_t size = i.mesh.positions.size() / 3;
-		buffer.reserve(size * 12 + size * 16);
+		const size_t stride = 12 + 16 + 8;
+		buffer.reserve(size * stride);
 		char* data = buffer.data();
 		char* begin = data;
 		for (size_t j = 0; j < size; ++j)
@@ -862,13 +879,17 @@ void voxelize(float s)
 			begin += 12;
 			memcpy(begin, color, sizeof(color));
 			begin += sizeof(color);
+			memcpy(begin, &i.mesh.texcoords[j * 2], 8);
+			begin += 8;
 		}
 
 
 		auto res = v.createResource();
-		res->setVertex(data, size, 12 + 16);
+		res->setVertex(data, size, stride);
 		res->setIndex(i.mesh.indices.data(), i.mesh.indices.size(), 4);
-		reses.push_back(res);
+
+		Sub s = { res, texName };
+		reses.push_back(s);
 
 		Vector3* pos = (Vector3*)i.mesh.positions.data();
 		for (int j = 0; j < size; ++j)
@@ -879,13 +900,18 @@ void voxelize(float s)
 
 	buffer.swap(std::vector<char>());
 
-	SponzaEffect* effect = v.createEffect<SponzaEffect>();
+	//SponzaEffect* effect = v.createEffect<SponzaEffect>();
 
 	for (int i = 0; i < reses.size(); ++i)
 	{
-		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-		v.voxelize(reses[i], &aabb);
+		//v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		v.voxelize(reses[i].vr, &aabb);
+		
+	}
 
+	for (auto& i : textureMap)
+	{
+		i.second->Release();
 	}
 
 	v.exportVoxels(voxels);
@@ -943,30 +969,6 @@ void render()
 	context->PSSetShader(pixelShader, NULL, 0);
 
 	context->PSSetSamplers(0, 1, &samplerLinear);
-
-	//int count = voxels.width * voxels.height * voxels.depth;
-	//for (int i = 0; i < count; ++i)
-	//{
-	//	int x = i % voxels.width;
-	//	int y = i / voxels.width % voxels.height;
-	//	int z = i/ voxels.width / voxels.height % voxels.depth;
-	//	unsigned char* content = (unsigned char*)((int*)voxels.datas.data() + i);
-	//	if (*(int*)content != 0)
-	//	{
-	//		variables.local = XMMatrixTranspose(XMMatrixTranslation(x  , y , z ));
-	//		//variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
-	//		variables.kd = XMFLOAT4(0.5, 0.5, 0.5, 1);
-	//		variables.ks = XMFLOAT4(0, 0, 0, 0);
-	//		variables.ns = 0;
-	//		
-	//		context->UpdateSubresource(variableBuffer, 0, NULL, &variables, 0, 0);
-	//		
-	//		context->DrawIndexed(36, 0, 0);
-	//	}
-	//
-
-	//	
-	//}
 
 	variables.local = XMMatrixIdentity();
 	//variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);
