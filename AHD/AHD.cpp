@@ -84,6 +84,7 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 	mPositionOffset = posoffset;
 
 	//calculate the max size
+	mAABB.setNull();
 	size_t buffersize = vertexCount * vertexStride;
 	{
 		const char* begin = (const char*)vertices;
@@ -163,11 +164,11 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 	if (mVertexBuffer == nullptr)
 		return;
 
+	mAABB.setNull();
 	D3D11_BUFFER_DESC desc;
 	mVertexBuffer->GetDesc(&desc);
 
-	AABB aabb;
-	auto calSize = [&aabb](ID3D11DeviceContext* context, ID3D11Buffer* buffer, size_t count , size_t stride, size_t offset)
+	auto calSize = [this](ID3D11DeviceContext* context, ID3D11Buffer* buffer, size_t count , size_t stride, size_t offset)
 	{
 		D3D11_MAPPED_SUBRESOURCE mr;
 		context->Map(buffer, 0, D3D11_MAP_READ, 0, &mr);
@@ -179,7 +180,7 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 			for (; begin != end; begin += stride)
 			{
 				Vector3 v = (*(const Vector3*)(begin + offset));
-				aabb.merge(v);
+				mAABB.merge(v);
 			}
 		}
 
@@ -198,6 +199,7 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 		ID3D11Buffer* tmp = 0;
 		CHECK_RESULT(mDevice->CreateBuffer(&desc, nullptr, &tmp),
 					 "fail to create temp buffer for reading.");
+		context->CopyResource(tmp, mVertexBuffer);
 		calSize(context, tmp, mVertexCount, mVertexStride, mPositionOffset);
 		tmp->Release();
 	}

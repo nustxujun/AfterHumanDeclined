@@ -152,6 +152,30 @@ namespace AHD
 			}
 		}
 
+		inline void merge(const AABB& rhs)
+		{
+			if (!rhs.isValid()) return;
+			if (isValid())
+			{
+				Vector3 min = mMin;
+				Vector3 max = mMax;
+				max.makeCeil(rhs.mMax);
+				min.makeFloor(rhs.mMin);
+
+				setExtents(min, max);
+			}
+			else
+			{
+				setExtents(rhs.mMin, rhs.mMax);
+			}
+
+		}
+
+		inline void setNull()
+		{
+			mType = T_INVALID;
+		}
+
 	private:
 		Vector3 mMin;
 		Vector3 mMax;

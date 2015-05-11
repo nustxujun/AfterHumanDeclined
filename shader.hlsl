@@ -10,12 +10,14 @@ struct VS_OUTPUT
 	float4 pos :SV_POSITION;
 	float3 worldPos:TEXCOORD0;
 	float3 normal :TEXCOORD1;
+	float4 color: COLOR0;
 };
 
 struct VS_INPUT
 {
 	float4 Pos : POSITION;
 	float3 Norm : NORMAL;
+	float4 Color: COLOR0;
 };
 
 cbuffer cbNeverChanges : register(b0)
@@ -52,6 +54,8 @@ VS_OUTPUT VS(VS_INPUT input)
 	o.normal = mul(input.Norm, local);
 	o.normal = mul(o.normal, World);
 	o.normal = normalize(o.normal);
+
+	o.color = input.Color;
     return o;
 }
 
@@ -64,7 +68,7 @@ VS_OUTPUT VS(VS_INPUT input)
 float4 PS(VS_OUTPUT input) : SV_Target
 {
 	float4 finalColor = 0;
-	finalColor += saturate(dot((float3)lightdir, input.normal)) * kd;
+	finalColor += saturate(dot((float3)lightdir, input.normal)) * input.color;
 	float3 V = normalize(eye - input.worldPos);
 		float3 H = normalize((float3)lightdir + V);
 		float spec = pow(max(dot(input.normal, H), 0), ns);

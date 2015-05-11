@@ -42,7 +42,7 @@ size_t drawCount = 0;
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 0.08;
+float scale = 0.05;
 
 struct Material
 {
@@ -97,7 +97,7 @@ struct Target
 	XMFLOAT3 rot;
 }target;
 
-class CowEffect : public Effect
+class SponzaEffect : public Effect
 {
 public:
 	struct Constant
@@ -105,14 +105,17 @@ public:
 		float world[16];
 		float view[16];
 		float proj[16];
-		float color[4];
 	}mConstant;
 
 	void init(ID3D11Device* device)
 	{
 		{
 			D3D11_INPUT_ELEMENT_DESC desc[] =
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+			{
+				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+				{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+
+			};
 
 			ID3DBlob* blob;
 			D3D11Helper::compileShader(&blob, "cow.hlsl", "vs", "vs_5_0", NULL);
@@ -487,6 +490,8 @@ HRESULT initDevice()
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+
 	};
 	UINT numElements = ARRAYSIZE(layout);
 
@@ -676,72 +681,75 @@ void optimizeVoxels()
 	{
 		Vector3 p;
 		Vector3 n;
+		int color;
 	};
 
 	struct Face
 	{
 		Vertex verts[4];
-		
-		void movePos(const Pos& offset)
+		void setup(const Pos& offset, int color)
 		{
 			for (auto& i : verts)
 			{
 				i.p.x += offset.x;
 				i.p.y += offset.y;
 				i.p.z += offset.z;
+				i.color = color;
 			}
 		}
+
+
 	};
 	const Face cube[] =
 	{
 		//P_X
 		{ 
-			Vector3(1, 0, 0), Vector3::UNIT_X,
-			Vector3(1, 0, 1), Vector3::UNIT_X, 
-			Vector3(1, 1, 1), Vector3::UNIT_X,
-			Vector3(1, 1, 0), Vector3::UNIT_X 
+			Vector3(1, 0, 0), Vector3::UNIT_X,0,
+			Vector3(1, 0, 1), Vector3::UNIT_X, 0,
+			Vector3(1, 1, 1), Vector3::UNIT_X, 0,
+			Vector3(1, 1, 0), Vector3::UNIT_X, 0
 		},
 		//P_Y
 		{ 
-			Vector3(0, 1, 0), Vector3::UNIT_Y, 
-			Vector3(1, 1, 0), Vector3::UNIT_Y, 
-			Vector3(1, 1, 1), Vector3::UNIT_Y, 
-			Vector3(0, 1, 1), Vector3::UNIT_Y 
+			Vector3(0, 1, 0), Vector3::UNIT_Y, 0,
+			Vector3(1, 1, 0), Vector3::UNIT_Y, 0,
+			Vector3(1, 1, 1), Vector3::UNIT_Y, 0,
+			Vector3(0, 1, 1), Vector3::UNIT_Y ,0
 		},
 		//P_Z
 		{
-			Vector3(0, 0, 1), Vector3::UNIT_Z, 
-			Vector3(0, 1, 1), Vector3::UNIT_Z, 
-			Vector3(1, 1, 1), Vector3::UNIT_Z, 
-			Vector3(1, 0, 1), Vector3::UNIT_Z 
+			Vector3(0, 0, 1), Vector3::UNIT_Z, 0,
+			Vector3(0, 1, 1), Vector3::UNIT_Z, 0,
+			Vector3(1, 1, 1), Vector3::UNIT_Z, 0,
+			Vector3(1, 0, 1), Vector3::UNIT_Z, 0
 		},
 		//N_X
 		{ 
-			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_X,
-			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_X,
-			Vector3(0, 1, 1), Vector3::NEGATIVE_UNIT_X,
-			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_X 
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_X, 0,
+			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_X, 0,
+			Vector3(0, 1, 1), Vector3::NEGATIVE_UNIT_X, 0,
+			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_X, 0
 		},
 		//N_Y
 		{ 
-			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Y, 
-			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_Y, 
-			Vector3(1, 0, 1), Vector3::NEGATIVE_UNIT_Y, 
-			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Y 
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Y, 0,
+			Vector3(0, 0, 1), Vector3::NEGATIVE_UNIT_Y, 0,
+			Vector3(1, 0, 1), Vector3::NEGATIVE_UNIT_Y, 0,
+			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Y, 0
 		},
 		//N_Z
 		{
-			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Z, 
-			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Z, 
-			Vector3(1, 1, 0), Vector3::NEGATIVE_UNIT_Z, 
-			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_Z 
+			Vector3(0, 0, 0), Vector3::NEGATIVE_UNIT_Z, 0,
+			Vector3(1, 0, 0), Vector3::NEGATIVE_UNIT_Z, 0,
+			Vector3(1, 1, 0), Vector3::NEGATIVE_UNIT_Z, 0,
+			Vector3(0, 1, 0), Vector3::NEGATIVE_UNIT_Z, 0
 		},
 
 	};
 
 	
 
-	ring<Block*> testQueue(1024);
+	ring<Block*> testQueue;
 	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
 	testQueue.push_back(&blocks[0]);
 
@@ -797,7 +805,8 @@ void optimizeVoxels()
 				}
 
 				Face face = cube[i];
-				face.movePos(b.pos);
+				//face.color = b.color;
+				face.setup(b.pos, b.color);
 				faces.push_back(face);
 
 
@@ -832,35 +841,49 @@ void voxelize(float s)
 
 	std::vector<VoxelResource*> reses;
 	AABB aabb;
+	std::vector<char> buffer;
 	for (auto& i : shapes)
 	{
+		float color[4] = {0};
+		auto& matidvec = i.mesh.material_ids;
+		if (!matidvec.empty())
+		{
+			memcpy(color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
+			color[3] = 1;
+		}
+
 		size_t size = i.mesh.positions.size() / 3;
+		buffer.reserve(size * 12 + size * 16);
+		char* data = buffer.data();
+		char* begin = data;
+		for (size_t j = 0; j < size; ++j)
+		{
+			memcpy(begin, &i.mesh.positions[j * 3], 12);
+			begin += 12;
+			memcpy(begin, color, sizeof(color));
+			begin += sizeof(color);
+		}
+
+
 		auto res = v.createResource();
-		res->setVertex(i.mesh.positions.data(), size, 12);
+		res->setVertex(data, size, 12 + 16);
 		res->setIndex(i.mesh.indices.data(), i.mesh.indices.size(), 4);
 		reses.push_back(res);
 
-		Vector3* begin = (Vector3*)i.mesh.positions.data();
+		Vector3* pos = (Vector3*)i.mesh.positions.data();
 		for (int j = 0; j < size; ++j)
 		{
-			aabb.merge(*begin++  );
+			aabb.merge(*pos++);
 		}
-		
 	}
 
-	//CowEffect* effect = v.createEffect<CowEffect>();
+	buffer.swap(std::vector<char>());
+
+	SponzaEffect* effect = v.createEffect<SponzaEffect>();
 
 	for (int i = 0; i < reses.size(); ++i)
 	{
-		//auto& matidvec = shapes[i].mesh.material_ids;
-		//if (!matidvec.empty())
-		//{
-		//	memcpy(effect->mConstant.color, materials[matidvec[0]].diffuse, sizeof(float) * 3);
-		//	effect->mConstant.color[3] = 1;
-		//	v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-
-		//}
-
+		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
 		v.voxelize(reses[i], &aabb);
 
 	}
