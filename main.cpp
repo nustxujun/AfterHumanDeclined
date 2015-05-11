@@ -108,6 +108,8 @@ public:
 		float proj[16];
 	}mConstant;
 
+	ID3D11ShaderResourceView* texture;
+
 	void init(ID3D11Device* device)
 	{
 		{
@@ -145,6 +147,8 @@ public:
 		context->PSSetShader(mPixelShader, NULL, 0);
 		context->VSSetConstantBuffers(0, 1, &mConstantBuffer);
 		context->PSSetConstantBuffers(0, 1, &mConstantBuffer);
+
+		context->PSSetShaderResources(0, 1, &texture);
 	}
 
 	void update(EffectParameter& paras)
@@ -848,7 +852,7 @@ void voxelize(float s)
 
 	std::map<std::string, ID3D11ShaderResourceView*> textureMap;
 
-	std::vector<Sub> reses;
+	std::vector<Sub> subs;
 	AABB aabb;
 	std::vector<char> buffer;
 	for (auto& i : shapes)
@@ -889,7 +893,7 @@ void voxelize(float s)
 		res->setIndex(i.mesh.indices.data(), i.mesh.indices.size(), 4);
 
 		Sub s = { res, texName };
-		reses.push_back(s);
+		subs.push_back(s);
 
 		Vector3* pos = (Vector3*)i.mesh.positions.data();
 		for (int j = 0; j < size; ++j)
@@ -900,12 +904,20 @@ void voxelize(float s)
 
 	buffer.swap(std::vector<char>());
 
-	//SponzaEffect* effect = v.createEffect<SponzaEffect>();
+	SponzaEffect* effect = v.createEffect<SponzaEffect>();
 
-	for (int i = 0; i < reses.size(); ++i)
+	for (int i = 0; i < subs.size(); ++i)
 	{
-		//v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-		v.voxelize(reses[i].vr, &aabb);
+
+		auto tex = textureMap.find(subs[i].tex);
+		if (tex != textureMap.end())
+		{
+			effect->texture = tex->second;
+		}
+		else
+			effect->texture = nullptr;
+		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		v.voxelize(subs[i].vr, &aabb);
 		
 	}
 
