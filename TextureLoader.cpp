@@ -5,7 +5,8 @@
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"3Party\\FreeImage.lib")
 
-
+#include <D3DX11.h>
+#pragma comment (lib,"d3dx11.lib")
 
 ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, const char* file)
 {
@@ -81,17 +82,19 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 	}
 	ID3D11ShaderResourceView* resource;
 	{
-		D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		desc.Texture2D.MostDetailedMip = 0;
-		desc.Texture2D.MipLevels = -1;
-		if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
-		{
-			texture->Release();
-			return nullptr;
-		}
-		texture->Release();
+		//D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+		//desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		//desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		//desc.Texture2D.MostDetailedMip = 0;
+		//desc.Texture2D.MipLevels = -1;
+		//if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
+		//{
+		//	texture->Release();
+		//	return nullptr;
+		//}
+		//texture->Release();
+
+		D3DX11CreateShaderResourceViewFromFileA(device, file, NULL, NULL, &resource, NULL);
 	}
 
 	//Free FreeImage's copy of the data

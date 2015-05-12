@@ -33,7 +33,6 @@ ID3D11Buffer*			constantBuffer = NULL;
 ID3D11Buffer*			variableBuffer = NULL;
 ID3D11Texture2D*        depthStencil = NULL;
 ID3D11DepthStencilView* depthStencilView = NULL;
-ID3D11SamplerState*		samplerLinear = NULL;
 ID3D11RasterizerState* rasterizerState = NULL;
 
 ID3D11Buffer*		optimizedVertices = NULL;
@@ -43,7 +42,7 @@ size_t drawCount = 0;
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 10;
+float scale = 0.05;
 
 struct Material
 {
@@ -108,10 +107,30 @@ public:
 		float proj[16];
 	}mConstant;
 
-	ID3D11ShaderResourceView* texture;
-
-	void init(ID3D11Device* device)
+	enum
 	{
+		NORMAL,
+		HAS_TEXTURE,
+		NUM
+	};
+
+
+	void addTexture(const std::string& file)
+	{
+		if (!file.empty() )
+		{
+			mTextureMap[file] = nullptr;
+		}
+	}
+
+	void setTexture(const std::string& tex)
+	{
+		mCurTex = tex;
+	}
+
+	void init(ID3D11Device* dev)
+	{
+
 		{
 			D3D11_INPUT_ELEMENT_DESC desc[] =
 			{
@@ -121,34 +140,64 @@ public:
 			};
 
 			ID3DBlob* blob;
-			D3D11Helper::compileShader(&blob, "cow.hlsl", "vs", "vs_5_0", NULL);
-			device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout);
-			device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader);
+			D3D11Helper::compileShader(&blob, "CustomVoxelizer.hlsl", "vs", "vs_5_0", NULL);
+			dev->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout);
+			dev->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader);
 			blob->Release();
 		}
 
-
+		D3D_SHADER_MACRO macros[] = { { "HAS_TEXTURE", "1" }, {NULL,NULL} };
+		D3D_SHADER_MACRO* macroref[] = { NULL, macros };
+		for (int i = NORMAL; i < NUM; ++i)
 		{
 			ID3DBlob* blob;
-			D3D11Helper::compileShader(&blob, "cow.hlsl", "ps", "ps_5_0", NULL);
-			device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader);
+			D3D11Helper::compileShader(&blob, "CustomVoxelizer.hlsl", "ps", "ps_5_0", macroref[i]);
+			dev->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader[i]);
 
 			blob->Release();
 		}
 
 
-		D3D11Helper::createBuffer(&mConstantBuffer, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(mConstant));
+		D3D11Helper::createBuffer(&mConstantBuffer, dev, D3D11_BIND_CONSTANT_BUFFER, sizeof(mConstant));
+
+		D3D11_SAMPLER_DESC sampDesc;
+		ZeroMemory(&sampDesc, sizeof(sampDesc));
+		sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+		sampDesc.MinLOD = 0;
+		sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+		dev->CreateSamplerState(&sampDesc, &mSampler);
+
+		for (auto& i : mTextureMap)
+		{
+			i.second = TextureLoader::createTexture(dev, i.first.c_str());
+		}
 
 	}
-	void prepare(ID3D11DeviceContext* context)
+	void prepare(ID3D11DeviceContext* cont)
 	{
-		context->VSSetShader(mVertexShader, NULL, 0);
-		context->IASetInputLayout(mLayout);
-		context->PSSetShader(mPixelShader, NULL, 0);
-		context->VSSetConstantBuffers(0, 1, &mConstantBuffer);
-		context->PSSetConstantBuffers(0, 1, &mConstantBuffer);
+		cont->VSSetShader(mVertexShader, NULL, 0);
+		cont->IASetInputLayout(mLayout);
+		cont->VSSetConstantBuffers(0, 1, &mConstantBuffer);
+		cont->PSSetConstantBuffers(0, 1, &mConstantBuffer);
 
-		context->PSSetShaderResources(0, 1, &texture);
+		ID3D11ShaderResourceView* texture = nullptr;
+		auto ret = mTextureMap.find(mCurTex);
+		if (ret != mTextureMap.end())
+		{
+			texture = ret->second;
+			cont->PSSetShader(mPixelShader[HAS_TEXTURE], NULL, 0);
+		}
+		else
+			cont->PSSetShader(mPixelShader[NORMAL], NULL, 0);
+
+		cont->PSSetShaderResources(0, 1, &texture);
+
+		cont->PSSetSamplers(0, 1, &mSampler);
+
 	}
 
 	void update(EffectParameter& paras)
@@ -160,17 +209,30 @@ public:
 
 	void clean()
 	{
+		auto endi = mTextureMap.end();
+		for (auto i = mTextureMap.begin(); i != endi; ++i)
+		{
+			i->second->Release();
+		}
 		mConstantBuffer->Release();
 		mVertexShader->Release();
 		mLayout->Release();
-		mPixelShader->Release();
+		for (auto i : mPixelShader)
+		{
+			i->Release();
+		}
+		mSampler->Release();
 	}
 	int getElementSize()const{ return 4; }
 
 	ID3D11VertexShader* mVertexShader;
-	ID3D11PixelShader* mPixelShader;
+	ID3D11PixelShader* mPixelShader[NUM];
 	ID3D11InputLayout* mLayout;
 	ID3D11Buffer* mConstantBuffer;
+	ID3D11SamplerState*		mSampler ;
+	std::map<std::string, ID3D11ShaderResourceView*> mTextureMap;
+	std::string mCurTex;
+
 };
 
 
@@ -558,16 +620,7 @@ HRESULT initDevice()
 	context->PSSetConstantBuffers(1, 1, &variableBuffer);
 
 
-	D3D11_SAMPLER_DESC sampDesc;
-	ZeroMemory(&sampDesc, sizeof(sampDesc));
-	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-	sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-	sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-	sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-	sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-	sampDesc.MinLOD = 0;
-	sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
-	hr = device->CreateSamplerState(&sampDesc, &samplerLinear);
+
 
 	D3D11_RASTERIZER_DESC desc;
 	desc.FillMode = D3D11_FILL_SOLID;
@@ -592,7 +645,7 @@ HRESULT initGeometry()
 	std::cout << "Loading ...";
 	long timer = GetTickCount();
 
-	LoadObj(shapes, materials, "cup.obj");
+	LoadObj(shapes, materials, "sponza.obj");
 
 	//std::string err = LoadObj(shapes, materials, "cow.obj");
 
@@ -850,7 +903,7 @@ void voxelize(float s)
 		std::string tex;
 	};
 
-	std::map<std::string, ID3D11ShaderResourceView*> textureMap;
+	SponzaEffect effect;
 
 	std::vector<Sub> subs;
 	AABB aabb;
@@ -866,10 +919,7 @@ void voxelize(float s)
 			memcpy(color, mat.diffuse, sizeof(float)* 3);
 			color[3] = 1;
 			texName = mat.diffuse_texname;
-			if (!texName.empty() && textureMap.find(texName) == textureMap.end())
-			{
-				textureMap[texName] = TextureLoader::createTexture(device, texName.c_str());
-			}
+			effect.addTexture(texName);
 		}
 
 		size_t size = i.mesh.positions.size() / 3;
@@ -904,27 +954,16 @@ void voxelize(float s)
 
 	buffer.swap(std::vector<char>());
 
-	SponzaEffect* effect = v.createEffect<SponzaEffect>();
+	v.addEffect(&effect);
 
 	for (int i = 0; i < subs.size(); ++i)
 	{
-
-		auto tex = textureMap.find(subs[i].tex);
-		if (tex != textureMap.end())
-		{
-			effect->texture = tex->second;
-		}
-		else
-			effect->texture = nullptr;
-		v.setEffectAndUAVParameters(effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+		effect.setTexture(subs[i].tex);
+		v.setEffectAndUAVParameters(&effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
 		v.voxelize(subs[i].vr, &aabb);
 		
 	}
-
-	for (auto& i : textureMap)
-	{
-		i.second->Release();
-	}
+	v.removeEffect(&effect);
 
 	v.exportVoxels(voxels);
 
@@ -947,7 +986,6 @@ void cleanDevice()
 	SAFE_RELEASE(optimizedVertices);
 	SAFE_RELEASE(optimizedIndexes);
 	SAFE_RELEASE(rasterizerState);
-	SAFE_RELEASE(samplerLinear);
 	SAFE_RELEASE(depthStencil);
 	SAFE_RELEASE(depthStencilView);
 	SAFE_RELEASE(variableBuffer);
@@ -980,7 +1018,6 @@ void render()
 	context->VSSetShader(vertexShader, NULL, 0);
 	context->PSSetShader(pixelShader, NULL, 0);
 
-	context->PSSetSamplers(0, 1, &samplerLinear);
 
 	variables.local = XMMatrixIdentity();
 	//variables.kd = XMFLOAT4(content[0] / 255., content[1] / 255., content[2] / 255., content[3] / 255.);

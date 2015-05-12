@@ -246,8 +246,7 @@ Voxelizer::~Voxelizer()
 	mDefaultEffect.clean();
 	for (auto i : mEffects)
 	{
-		i->clean();
-		delete i;
+		assert(0 && "effect need to remove");
 	}
 
 }
@@ -491,6 +490,25 @@ void Voxelizer::exportVoxels(Result& result)
 	UINT initcolor[4] = { 0 };
 	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 }
+
+void Voxelizer::addEffect(Effect* effect)
+{
+	if (mEffects.insert(effect).second)
+		effect->init(mDevice);
+	
+}
+
+void Voxelizer::removeEffect(Effect* effect)
+{
+	auto ret = mEffects.find(effect);
+	if (ret != mEffects.end())
+	{
+		(*ret)->clean();
+		mEffects.erase(ret);
+	}
+}
+
+
 
 VoxelResource* Voxelizer::createResource()
 {

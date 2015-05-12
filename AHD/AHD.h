@@ -7,6 +7,7 @@
 #include <string>
 #include <xnamath.h>
 #include "AHDUtils.h"
+#include <set>
 
 namespace AHD
 {
@@ -151,15 +152,8 @@ namespace AHD
 		void voxelize(VoxelResource* res, const AABB* aabb = nullptr, size_t drawBegin = 0, size_t drawCount = ~0);
 		void exportVoxels(Result& output);
 
-		template<class T, class ... Args>
-		T* createEffect(Args& ... args)
-		{
-			T* e = new T(args...);
-			mEffects.push_back(e);
-			e->init(mDevice);
-
-			return e;
-		}
+		void addEffect(Effect* effect);
+		void removeEffect(Effect* effect);
 
 		VoxelResource* createResource();
 
@@ -209,7 +203,7 @@ namespace AHD
 		float mVoxelSize = 1.0f;
 		XMMATRIX mTranslation;
 		XMMATRIX mProjection;
-		std::vector<Effect*> mEffects;
+		std::set<Effect*> mEffects;
 		Effect* mCurrentEffect = nullptr;
 		DefaultEffect mDefaultEffect;
 
