@@ -28,7 +28,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 		dib = FreeImage_Load(fif, file);
 	//if the image failed to load, return failure
 	if (dib == NULL)
-		assert(0 && "cannot load texture");
+		return nullptr;
 
 	//retrieve the image data
 	bits = FreeImage_GetBits(dib);
