@@ -21,14 +21,14 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 		fif = FreeImage_GetFIFFromFilename(file);
 	//if still unkown, return failure
 	if (fif == FIF_UNKNOWN)
-		assert(0);
+		assert(0 && "unknown texture format");
 
 	//check that the plugin has reading capabilities and load the file
 	if (FreeImage_FIFSupportsReading(fif))
 		dib = FreeImage_Load(fif, file);
 	//if the image failed to load, return failure
 	if (dib == NULL)
-		assert(0);
+		assert(0 && "cannot load texture");
 
 	//retrieve the image data
 	bits = FreeImage_GetBits(dib);
@@ -54,7 +54,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 			break;
 		default:
 			//unsupported
-			assert(0);
+			assert(0 && "unsupport format");
 	}
 
 	ID3D11Texture2D* texture;
@@ -80,21 +80,19 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 		if (FAILED(device->CreateTexture2D(&desc, &initdata, &texture)))
 			return nullptr;
 	}
-	ID3D11ShaderResourceView* resource;
+	ID3D11ShaderResourceView* resource = nullptr;
 	{
-		//D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-		//desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		//desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		//desc.Texture2D.MostDetailedMip = 0;
-		//desc.Texture2D.MipLevels = -1;
-		//if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
-		//{
-		//	texture->Release();
-		//	return nullptr;
-		//}
-		//texture->Release();
-
-		D3DX11CreateShaderResourceViewFromFileA(device, file, NULL, NULL, &resource, NULL);
+		D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		desc.Texture2D.MostDetailedMip = 0;
+		desc.Texture2D.MipLevels = -1;
+		if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
+		{
+			texture->Release();
+			return nullptr;
+		}
+		texture->Release();
 	}
 
 	//Free FreeImage's copy of the data
