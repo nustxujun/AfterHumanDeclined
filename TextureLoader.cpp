@@ -60,16 +60,6 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 
 	ID3D11Texture2D* texture;
 	{
-		std::vector<int> temp(width * height);
-		int* begin = temp.data();
-		int stride = 4 * width;
-		for (int i = height - 1; i >= 0; --i)
-		{
-			memcpy(begin, (int*)bits + i * width, stride);
-			begin += width;
-		}
-
-
 		D3D11_TEXTURE2D_DESC desc;
 		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 		desc.Width = width;
@@ -84,7 +74,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 		desc.Usage = D3D11_USAGE_DEFAULT;
 
 		D3D11_SUBRESOURCE_DATA initdata;
-		initdata.pSysMem = temp.data();
+		initdata.pSysMem = bits;
 		initdata.SysMemPitch = 4 * width;
 		initdata.SysMemSlicePitch = 4 * width * height;
 
