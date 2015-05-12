@@ -77,21 +77,6 @@ namespace AHD
 		static const size_t ELEM_SIZE = 4;
 	};
 
-	struct MeshWrapper
-	{
-		const void* vertices = nullptr;
-		size_t vertexCount = 0;
-		size_t vertexStride = 0;
-
-		const void* indexes = nullptr;
-		size_t indexCount = 0;
-		size_t indexStride = 0;
-
-		size_t posOffset = 0;
-
-
-	};
-
 	class VoxelResource
 	{
 		friend class Voxelizer;
@@ -129,15 +114,12 @@ namespace AHD
 
 	class Voxelizer
 	{
-
-
-
-
 	public:
 		struct Result
 		{
 			std::vector<char> datas;
 			int width, height, depth;
+			int elementSize;
 		};
 
 	public :

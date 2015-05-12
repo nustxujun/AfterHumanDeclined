@@ -79,5 +79,6 @@ float4 PS(VS_OUTPUT input) : SV_Target
 	finalColor = saturate(finalColor);
 	finalColor.a = 1;
 	return finalColor;
+	//return input.color;
 }
 

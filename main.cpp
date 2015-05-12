@@ -21,6 +21,12 @@
 using namespace AHD;
 using namespace tinyobj;
 
+
+float scale = 0.05;
+const char* modelname = "sponza.obj";
+
+
+
 HWND window;
 ID3D11Device*           device = NULL;
 ID3D11DeviceContext*    context = NULL;
@@ -42,7 +48,6 @@ size_t drawCount = 0;
 Voxelizer::Result		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
-float scale = 0.05;
 
 struct Material
 {
@@ -72,12 +77,6 @@ struct VariableBuffer
 	float ns;
 }variables;
 
-struct SimpleVertex
-{
-	XMFLOAT3 Pos;
-	XMFLOAT3 Normal;
-};
-
 struct Camera
 {
 	XMVECTOR pos;
@@ -105,6 +104,8 @@ public:
 		float world[16];
 		float view[16];
 		float proj[16];
+		float diffuse[4];
+		float ambient[4];
 	}mConstant;
 
 	enum
@@ -123,7 +124,7 @@ public:
 		}
 	}
 
-	void setTexture(const std::string& tex)
+	void setTexture(int slot, const std::string& tex)
 	{
 		mCurTex = tex;
 	}
@@ -135,8 +136,7 @@ public:
 			D3D11_INPUT_ELEMENT_DESC desc[] =
 			{
 				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-				{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 			};
 
 			ID3DBlob* blob;
@@ -162,13 +162,14 @@ public:
 
 		D3D11_SAMPLER_DESC sampDesc;
 		ZeroMemory(&sampDesc, sizeof(sampDesc));
-		sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		sampDesc.Filter = D3D11_FILTER_ANISOTROPIC;
 		sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
 		sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
 		sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
 		sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
 		sampDesc.MinLOD = 0;
 		sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+		sampDesc.MaxAnisotropy = 16;
 		dev->CreateSamplerState(&sampDesc, &mSampler);
 
 		for (auto& i : mTextureMap)
@@ -645,17 +646,11 @@ HRESULT initGeometry()
 	std::cout << "Loading ...";
 	long timer = GetTickCount();
 
-	LoadObj(shapes, materials, "sponza.obj");
-
-	//std::string err = LoadObj(shapes, materials, "cow.obj");
+	LoadObj(shapes, materials, modelname);
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 
 	voxelize(scale);
-
-	
-
-	
 
 	camera.pos = XMVectorSet(0.0f, 0.0f, -voxels.width * 2, 0.0f);
 	return S_OK;
@@ -901,6 +896,8 @@ void voxelize(float s)
 	{
 		VoxelResource* vr;
 		std::string tex;
+		float diffuse[4];
+		float ambient[4];
 	};
 
 	SponzaEffect effect;
@@ -910,20 +907,23 @@ void voxelize(float s)
 	std::vector<char> buffer;
 	for (auto& i : shapes)
 	{
-		float color[4] = {0};
-		std::string texName;
+		float diffuse[4] = { 0, 0, 0, 1 };
+		float ambient[4] = { 0, 0, 0, 1 };
+		std::string texDiff, texAmb;
 		auto& matidvec = i.mesh.material_ids;
 		if (!matidvec.empty())
 		{
 			auto& mat = materials[matidvec[0]];
-			memcpy(color, mat.diffuse, sizeof(float)* 3);
-			color[3] = 1;
-			texName = mat.diffuse_texname;
-			effect.addTexture(texName);
+
+			memcpy(diffuse, mat.diffuse, sizeof(float) * 3);
+			memcpy(ambient, mat.ambient, sizeof(float) * 3);
+			texDiff = mat.diffuse_texname;
+			effect.addTexture(texDiff);
+
 		}
 
 		size_t size = i.mesh.positions.size() / 3;
-		const size_t stride = 12 + 16 + 8;
+		const size_t stride = 12 + 8;
 		buffer.reserve(size * stride);
 		char* data = buffer.data();
 		char* begin = data;
@@ -931,8 +931,6 @@ void voxelize(float s)
 		{
 			memcpy(begin, &i.mesh.positions[j * 3], 12);
 			begin += 12;
-			memcpy(begin, color, sizeof(color));
-			begin += sizeof(color);
 			memcpy(begin, &i.mesh.texcoords[j * 2], 8);
 			begin += 8;
 		}
@@ -942,7 +940,12 @@ void voxelize(float s)
 		res->setVertex(data, size, stride);
 		res->setIndex(i.mesh.indices.data(), i.mesh.indices.size(), 4);
 
-		Sub s = { res, texName };
+		Sub s = { 
+			res, 
+			texDiff,
+			{ diffuse[0], diffuse[1], diffuse[2], 1 },
+			{ ambient[0], ambient[1], ambient[2], 1 },
+		};
 		subs.push_back(s);
 
 		Vector3* pos = (Vector3*)i.mesh.positions.data();
@@ -958,7 +961,10 @@ void voxelize(float s)
 
 	for (int i = 0; i < subs.size(); ++i)
 	{
-		effect.setTexture(subs[i].tex);
+		effect.setTexture(0,subs[i].tex);
+		memcpy(effect.mConstant.diffuse, subs[i].diffuse, sizeof(float) * 4);
+		memcpy(effect.mConstant.ambient, subs[i].ambient, sizeof(float) * 4);
+
 		v.setEffectAndUAVParameters(&effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
 		v.voxelize(subs[i].vr, &aabb);
 		

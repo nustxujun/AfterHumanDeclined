@@ -456,6 +456,7 @@ void Voxelizer::exportVoxels(Result& result)
 	result.width = mSize.width;
 	result.height = mSize.height;
 	result.depth = mSize.depth;
+	result.elementSize = mUAVElementSize;
 
 	Interface<ID3D11Texture3D> debug = NULL;
 	D3D11_TEXTURE3D_DESC dsDesc;
