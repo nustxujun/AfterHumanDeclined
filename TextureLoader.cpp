@@ -60,7 +60,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 	ID3D11Texture2D* texture;
 	{
 		D3D11_TEXTURE2D_DESC desc;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 		desc.Width = width;
 		desc.Height = height;
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -83,7 +83,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 	ID3D11ShaderResourceView* resource = nullptr;
 	{
 		D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		desc.Texture2D.MostDetailedMip = 0;
 		desc.Texture2D.MipLevels = -1;
