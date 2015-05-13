@@ -22,8 +22,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 10;
-const char* modelname = "cup.obj";
+float scale = 0.08;
+const char* modelname = "sponza.obj";
 
 
 
@@ -213,7 +213,8 @@ public:
 		auto endi = mTextureMap.end();
 		for (auto i = mTextureMap.begin(); i != endi; ++i)
 		{
-			i->second->Release();
+			if (i->second)
+				i->second->Release();
 		}
 		mConstantBuffer->Release();
 		mVertexShader->Release();
