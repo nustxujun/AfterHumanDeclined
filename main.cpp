@@ -22,8 +22,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 0.05;
-const char* modelname = "sponza.obj";
+float scale = 10;
+const char* modelname = "cup.obj";
 
 
 
@@ -234,6 +234,37 @@ public:
 	std::map<std::string, ID3D11ShaderResourceView*> mTextureMap;
 	std::string mCurTex;
 
+};
+
+class EffectProxy : public Effect
+{
+public:
+	SponzaEffect* effect;
+
+	struct
+	{
+		float diffuse[4];
+		float ambient[4];
+	}constant;
+
+	std::string texture;
+
+	void init(ID3D11Device* device)
+	{}
+	void prepare(ID3D11DeviceContext* context)
+	{
+		memcpy(effect->mConstant.diffuse, &constant, sizeof(float) * 8);
+		effect->setTexture(0, texture);
+		effect->prepare(context);
+	}
+	void update(EffectParameter& paras)
+	{
+		effect->update(paras);
+	}
+	void clean()
+	{
+
+	}
 };
 
 
@@ -892,86 +923,65 @@ void voxelize(float s)
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 
-	struct Sub
-	{
-		VoxelResource* vr;
-		std::string tex;
-		float diffuse[4];
-		float ambient[4];
-	};
+	SponzaEffect sponzaEffect;
+	std::vector<EffectProxy> effects(shapes.size());
+	
 
-	SponzaEffect effect;
-
-	std::vector<Sub> subs;
+	std::vector<VoxelResource*> subs;
 	AABB aabb;
 	std::vector<char> buffer;
-	for (auto& i : shapes)
+	for (int i = 0; i < shapes.size();++i)
 	{
-		float diffuse[4] = { 0, 0, 0, 1 };
-		float ambient[4] = { 0, 0, 0, 1 };
 		std::string texDiff, texAmb;
-		auto& matidvec = i.mesh.material_ids;
+		auto& matidvec = shapes[i].mesh.material_ids;
 		if (!matidvec.empty())
 		{
 			auto& mat = materials[matidvec[0]];
 
-			memcpy(diffuse, mat.diffuse, sizeof(float) * 3);
-			memcpy(ambient, mat.ambient, sizeof(float) * 3);
+			memcpy(effects[i].constant.diffuse, mat.diffuse, sizeof(float) * 3);
+			memcpy(effects[i].constant.ambient, mat.ambient, sizeof(float) * 3);
+			effects[i].constant.diffuse[3] = 1;
+			effects[i].constant.ambient[3] = 1;
 			texDiff = mat.diffuse_texname;
-			effect.addTexture(texDiff);
-
+			sponzaEffect.addTexture(texDiff);
+			effects[i].texture = texDiff;
+			effects[i].effect = &sponzaEffect;
 		}
 
-		size_t size = i.mesh.positions.size() / 3;
+		size_t size = shapes[i].mesh.positions.size() / 3;
 		const size_t stride = 12 + 8;
 		buffer.reserve(size * stride);
 		char* data = buffer.data();
 		char* begin = data;
 		for (size_t j = 0; j < size; ++j)
 		{
-			memcpy(begin, &i.mesh.positions[j * 3], 12);
+			memcpy(begin, &shapes[i].mesh.positions[j * 3], 12);
 			begin += 12;
-			memcpy(begin, &i.mesh.texcoords[j * 2], 8);
+			memcpy(begin, &shapes[i].mesh.texcoords[j * 2], 8);
 			begin += 8;
 		}
 
 
 		auto res = v.createResource();
 		res->setVertex(data, size, stride);
-		res->setIndex(i.mesh.indices.data(), i.mesh.indices.size(), 4);
+		res->setIndex(shapes[i].mesh.indices.data(), shapes[i].mesh.indices.size(), 4);
+		res->setEffect(&effects[i]);
 
-		Sub s = { 
-			res, 
-			texDiff,
-			{ diffuse[0], diffuse[1], diffuse[2], 1 },
-			{ ambient[0], ambient[1], ambient[2], 1 },
-		};
-		subs.push_back(s);
+		subs.push_back(res);
 
-		Vector3* pos = (Vector3*)i.mesh.positions.data();
-		for (int j = 0; j < size; ++j)
-		{
-			aabb.merge(*pos++);
-		}
+
 	}
 
 	buffer.swap(std::vector<char>());
 
-	v.addEffect(&effect);
+	v.setUAVParameters( DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+	v.addEffect(&sponzaEffect);
 
-	for (int i = 0; i < subs.size(); ++i)
-	{
-		effect.setTexture(0,subs[i].tex);
-		memcpy(effect.mConstant.diffuse, subs[i].diffuse, sizeof(float) * 4);
-		memcpy(effect.mConstant.ambient, subs[i].ambient, sizeof(float) * 4);
 
-		v.setEffectAndUAVParameters(&effect, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
-		v.voxelize(subs[i].vr, &aabb);
-		
-	}
-	v.removeEffect(&effect);
+	v.voxelize(voxels,subs.size(),subs.data());
 
-	v.exportVoxels(voxels);
+
+	v.removeEffect(&sponzaEffect);
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 

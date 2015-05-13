@@ -156,6 +156,13 @@ VoxelResource::~VoxelResource()
 
 }
 
+void VoxelResource::setEffect(Effect* effect)
+{
+	mEffect = effect;
+}
+
+
+
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
 	if (!mNeedCalSize)
@@ -163,6 +170,7 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 
 	if (mVertexBuffer == nullptr)
 		return;
+
 
 	mAABB.setNull();
 	D3D11_BUFFER_DESC desc;
@@ -213,11 +221,6 @@ Voxelizer::Voxelizer()
 {
 	Helper::createDevice(&mDevice, &mContext);
 
-	mDefaultEffect.init(mDevice);
-	setEffectAndUAVParameters(&mDefaultEffect,
-							  DefaultEffect::OUTPUT_FORMAT,
-							  DefaultEffect::SLOT,
-							  DefaultEffect::ELEM_SIZE);
 }
 
 Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
@@ -227,11 +230,6 @@ Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
 	mContext = context;
 	context->AddRef();
 
-	mDefaultEffect.init(mDevice);
-	setEffectAndUAVParameters(&mDefaultEffect, 
-							  DefaultEffect::OUTPUT_FORMAT, 
-							  DefaultEffect::SLOT, 
-							  DefaultEffect::ELEM_SIZE);
 }
 
 Voxelizer::~Voxelizer()
@@ -243,7 +241,6 @@ Voxelizer::~Voxelizer()
 		delete i;
 	}
 
-	mDefaultEffect.clean();
 	for (auto i : mEffects)
 	{
 		assert(0 && "effect need to remove");
@@ -271,23 +268,21 @@ void Voxelizer::setScale(float v)
 	mScale = v;
 }
 
-bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
+bool Voxelizer::prepare(size_t count, VoxelResource** res)
 {
 	if (res == nullptr)
 		return false;
-	mCurrentEffect->prepare(mContext);
-	res->prepare(mContext);
 
-
-
-	if (!aabb)
+	AABB aabb;
+	for (size_t i = 0; i < count; ++i)
 	{
-		aabb = &res->mAABB;
+		res[i]->prepare(mContext);
+		aabb.merge(res[i]->mAABB);
 	}
 
 
 	float scale = mScale / mVoxelSize;
-	Vector3 osize = aabb->getSize() * scale;
+	Vector3 osize = aabb.getSize() * scale;
 	osize += Vector3::UNIT_SCALE;
 	float max = std::max(osize.x, std::max(osize.y, osize.z));
 	Size size =
@@ -298,46 +293,42 @@ bool Voxelizer::prepare(VoxelResource* res, const AABB* aabb)
 		(size_t)std::ceil(max)
 	};
 
-	if (!mRenderTarget.isNull() && !mOutputTexture3D.isNull() && mSize == size)
+	//transfrom
+	Vector3 min = aabb.getMin() * scale;
+	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
+		XMMatrixScaling(scale, scale, scale);
+	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)size.maxLength, 0, (float)size.maxLength, 0, (float)size.maxLength));
+
+	if (!mRenderTarget.isNull() && !mOutputTexture3D.isNull() && mUAVSize == size)
 		return true;
-	mSize = size;
+	mUAVSize = size;
 
 	cleanResource();
 
-	//transfrom
-	Vector3 min = aabb->getMin() * scale;
-	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
-		XMMatrixScaling(scale, scale, scale);
-	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)mSize.maxLength, 0, (float)mSize.maxLength, 0, (float)mSize.maxLength));
-
-	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mUAVFormat, mSize.width, mSize.height, mSize.depth),
+	CHECK_RESULT(Helper::createUAVTexture3D(&mOutputTexture3D, &mOutputUAV, mDevice, mUAVFormat, mUAVSize.width, mUAVSize.height, mUAVSize.depth),
 				 "failed to create uav texture3D,  cant use gpu voxelizer");
 
-	UINT initcolor[4] = { 0 };
-	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 
-	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mSize.maxLength, mSize.maxLength),
+	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, mUAVSize.maxLength, mUAVSize.maxLength),
 				 "failed to create rendertarget,  cant use gpu voxelizer");
 
 
 	return true;
 }
 
-void Voxelizer::setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize)
+void Voxelizer::setUAVParameters( DXGI_FORMAT Format, UINT slot, size_t elemSize)
 {
 
 	if (slot == 0)
 	{
 		EXCEPT("uav slot 0 is almost used for rendertarget,cannot be 0.");
 	}
-	if (mUAVFormat != Format)
+	if (mUAVFormat != Format || mUAVElementSize != elemSize)
 	{
 		cleanResource();
 	}
 
 	mUAVSlot = slot;
-	mCurrentEffect = effect;
-
 
 	mUAVFormat = Format;
 
@@ -346,22 +337,34 @@ void Voxelizer::setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UI
 }
 
 
-void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin , size_t drawCount)
+void Voxelizer::voxelize(Result& result, size_t count, VoxelResource** res)
 {
-	if (!prepare(res, range))
+	if (!prepare(count, res))
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
 	//slot may be changed;
 	mContext->OMSetRenderTargetsAndUnorderedAccessViews(1, &mRenderTargetView, NULL, mUAVSlot, 1, &mOutputUAV, NULL);
+	UINT initcolor[4] = { 0 };
+	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 
+	for (size_t i = 0; i < count; ++i)
+	{
+		voxelizeImpl(res[i]);
+	}
+
+	exportVoxels(result);
+}
+
+void Voxelizer::voxelizeImpl( VoxelResource* res)
+{
 	UINT stride = res->mVertexStride;
 	UINT offset = 0;
 	mContext->IASetVertexBuffers(0, 1, &res->mVertexBuffer, &stride, &offset);
 	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	int start = std::max((size_t)0, drawBegin);
-	int count = std::min((size_t)res->mVertexCount, drawCount);
+	int start = 0;
+	int count = res->mVertexCount;
 
 	bool useIndex = res->mIndexBuffer != nullptr;
 	if (useIndex)
@@ -395,19 +398,21 @@ void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin
 		desc.MultisampleEnable = false;
 		desc.AntialiasedLineEnable = false;
 
-		CHECK_RESULT(mDevice->CreateRasterizerState(&desc, &rasterizerState), 
+		CHECK_RESULT(mDevice->CreateRasterizerState(&desc, &rasterizerState),
 					 "fail to create rasterizer state,  cant use gpu voxelizer");
 		mContext->RSSetState(rasterizerState);
 	}
 
 	D3D11_VIEWPORT vp;
-	vp.Width = (FLOAT)mSize.maxLength;
-	vp.Height = (FLOAT)mSize.maxLength;
+	vp.Width = (FLOAT)mUAVSize.maxLength;
+	vp.Height = (FLOAT)mUAVSize.maxLength;
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
 	vp.TopLeftX = 0;
 	vp.TopLeftY = 0;
 	mContext->RSSetViewports(1, &vp);
+
+	res->mEffect->prepare(mContext);
 
 
 	struct ViewPara
@@ -427,9 +432,9 @@ void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin
 	//we need to render 3 times from different views
 	ViewPara views[] =
 	{
-		Vector3::ZERO, Vector3::UNIT_Z * (float)mSize.maxLength, Vector3::UNIT_Y,
-		Vector3::UNIT_X * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Y,
-		Vector3::UNIT_Y * (float)mSize.maxLength, Vector3::ZERO, Vector3::UNIT_Z,
+		Vector3::ZERO, Vector3::UNIT_Z * (float)mUAVSize.maxLength, Vector3::UNIT_Y,
+		Vector3::UNIT_X * (float)mUAVSize.maxLength, Vector3::ZERO, Vector3::UNIT_Y,
+		Vector3::UNIT_Y * (float)mUAVSize.maxLength, Vector3::ZERO, Vector3::UNIT_Z,
 	};
 
 	for (ViewPara& v : views)
@@ -440,7 +445,7 @@ void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin
 		parameters.view = XMMatrixLookAtLH(Eye, At, Up);
 		parameters.view = XMMatrixTranspose(parameters.view);
 
-		mCurrentEffect->update(parameters);
+		res->mEffect->update(parameters);
 
 		if (useIndex)
 			mContext->DrawIndexed(count, start, 0);
@@ -451,11 +456,13 @@ void Voxelizer::voxelize(VoxelResource* res, const AABB* range, size_t drawBegin
 
 }
 
+
 void Voxelizer::exportVoxels(Result& result)
 {
-	result.width = mSize.width;
-	result.height = mSize.height;
-	result.depth = mSize.depth;
+
+	result.width = mUAVSize.width;
+	result.height = mUAVSize.height;
+	result.depth = mUAVSize.depth;
 	result.elementSize = mUAVElementSize;
 
 	Interface<ID3D11Texture3D> debug = NULL;
@@ -473,13 +480,13 @@ void Voxelizer::exportVoxels(Result& result)
 	D3D11_MAPPED_SUBRESOURCE mr;
 	mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
 
-	int stride = mUAVElementSize * mSize.width;
-	result.datas.reserve(stride * mSize.height * mSize.depth);
+	int stride = mUAVElementSize * mUAVSize.width;
+	result.datas.reserve(stride * mUAVSize.height * mUAVSize.depth);
 	char* begin = result.datas.data();
-	for (size_t z = 0; z < mSize.depth; ++z)
+	for (size_t z = 0; z < mUAVSize.depth; ++z)
 	{
 		const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-		for (size_t y = 0; y < mSize.height; ++y)
+		for (size_t y = 0; y < mUAVSize.height; ++y)
 		{
 			memcpy(begin, depth + mr.RowPitch * y, stride);
 			begin += stride;
@@ -488,8 +495,6 @@ void Voxelizer::exportVoxels(Result& result)
 
 	mContext->Unmap(debug, 0);
 
-	UINT initcolor[4] = { 0 };
-	mContext->ClearUnorderedAccessViewUint(mOutputUAV, initcolor);
 }
 
 void Voxelizer::addEffect(Effect* effect)

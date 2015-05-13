@@ -92,6 +92,8 @@ namespace AHD
 		void removeIndexes();
 
 		~VoxelResource();
+
+		void setEffect(Effect* effect);
 	private:
 		VoxelResource(ID3D11Device* device);
 		void prepare(ID3D11DeviceContext* context);
@@ -110,6 +112,7 @@ namespace AHD
 
 		AABB mAABB;
 		bool mNeedCalSize = true;
+		Effect* mEffect = nullptr;
 	};
 
 	class Voxelizer
@@ -129,10 +132,9 @@ namespace AHD
 
 		void setScale(float scale);
 		void setVoxelSize(float v);
-		void setEffectAndUAVParameters(Effect* effect, DXGI_FORMAT Format, UINT slot, size_t elemSize);
+		void setUAVParameters(DXGI_FORMAT Format, UINT slot, size_t elemSize);
 
-		void voxelize(VoxelResource* res, const AABB* aabb = nullptr, size_t drawBegin = 0, size_t drawCount = ~0);
-		void exportVoxels(Result& output);
+		void voxelize(Result& result, size_t count, VoxelResource** res);
 
 		void addEffect(Effect* effect);
 		void removeEffect(Effect* effect);
@@ -140,9 +142,10 @@ namespace AHD
 		VoxelResource* createResource();
 
 	private:
-
-		bool prepare(VoxelResource* res, const AABB* range);
+		void voxelizeImpl( VoxelResource* res);
+		bool prepare(size_t count, VoxelResource** res);
 		void cleanResource();
+		void exportVoxels(Result& output);
 
 	private:
 		struct Size
@@ -178,7 +181,6 @@ namespace AHD
 			}
 		};
 
-		Size mSize;
 
 		VoxelResource* mCurrentResource;
 		float mScale = 1.0f;
@@ -186,8 +188,6 @@ namespace AHD
 		XMMATRIX mTranslation;
 		XMMATRIX mProjection;
 		std::set<Effect*> mEffects;
-		Effect* mCurrentEffect = nullptr;
-		DefaultEffect mDefaultEffect;
 
 		Interface<ID3D11Device> mDevice;
 		Interface<ID3D11DeviceContext>	 mContext;
@@ -197,6 +197,8 @@ namespace AHD
 		DXGI_FORMAT mUAVFormat = DXGI_FORMAT_UNKNOWN;
 		size_t mUAVElementSize = 0;
 		UINT mUAVSlot = 1;
+		Size mUAVSize;
+
 
 		Interface<ID3D11Texture2D> mRenderTarget = nullptr;
 		Interface<ID3D11RenderTargetView> mRenderTargetView = nullptr;
