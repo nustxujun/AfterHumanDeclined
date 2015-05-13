@@ -1,39 +1,45 @@
 # AfterHumanDeclined 
 A very fast GPU-based voxelizer, request d3d11 and shader model 5.0
 
- ![naive rasterization](doc/cow.png)  
- ![naive rasterization](doc/sponza.png)  
+![naive rasterization](doc/cow.png)  
+![naive rasterization](doc/sponza.png)  
 
 --
 
 ### how to use
   
-  - simple sample
- ```C++
- #include "AHD.h"
+- simple sample
+```C++
+#include "AHD.h"
 
- AHD::Voxelizer voxelizer;
+AHD::Voxelizer voxelizer;
  
- //resource is using to create or store vertexbuffer and indexbuffer
- VoxelResource* resource = voxelizer.create();
+//resource is using to create or store vertexbuffer and indexbuffer
+VoxelResource* resource = voxelizer.create();
 
-  //original data or ID3D11Buffer are both ok
- resource->setVertex(vertexData, vertexDataSize, vertexStride);
- resource->setIndex(indexData, indexDataSize, indexStride);
+//original data or ID3D11Buffer are both ok
+resource->setVertex(vertexData, vertexDataSize, vertexStride);
+resource->setIndex(indexData, indexDataSize, indexStride);
 
- //effect is using to setup render state, every resource needs one effect
- DefaultEffect effect;
- voxelizer.addEffect(&effect);
- resource->setEffect(&effect);
+//effect is using to setup render state, every resource needs one effect
+DefaultEffect effect;
+voxelizer.addEffect(&effect);
+resource->setEffect(&effect);
 
- //setup the output format
- voxelizer.setUAVParameters( DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
+//create output object, it supports multi uav at same time
+VoxelOuput* output = voxelizer.createOutput();
+size_t slot = 1;
+size_t elementSize = 4;
+output.addUAV(slot, DXGI_FORMAT_R8G8B8A8_UNORM, elementSize);
 
- //calculate and get result
- voxelizer.voxelize(result, 0, &resource);
+//calculate and get result
+voxelizer.voxelize(output, 0, &resource);
 
- //release the hardware resource in effect
- voxelizer.remove(&effect);
+//release the hardware resource in effect
+voxelizer.remove(&effect);
 
+//get data
+VoxelData data;
+output.exportData(data, slot);
 
- ```
+```
