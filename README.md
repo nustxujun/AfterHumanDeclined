@@ -4,7 +4,7 @@ A very fast GPU-based voxelizer, request d3d11 and shader model 5.0
  ![naive rasterization](doc/cow.png)  
  ![naive rasterization](doc/sponza.png)  
 
---------------
+--
 
 ### how to use
   
