@@ -8,6 +8,7 @@
 #include <xnamath.h>
 #include "AHDUtils.h"
 #include <set>
+#include <map>
 
 namespace AHD
 {
@@ -115,16 +116,55 @@ namespace AHD
 		Effect* mEffect = nullptr;
 	};
 
-	class Voxelizer
+	struct VoxelData
 	{
+		std::vector<char> datas;
+		int width = 0;
+		int height = 0;
+		int depth = 0;
+
+	
+	};
+
+	class VoxelOutput
+	{
+		friend class Voxelizer;
 	public:
-		struct Result
+		void addUAV(size_t slot, DXGI_FORMAT format, size_t elementSize);
+		void removeUAV(size_t slot);
+
+		void exportData(VoxelData& data, size_t slot);
+
+	private:
+		void reset();
+		VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context);
+
+	private:
+		int mWidth;
+		int mHeight;
+		int mDepth;
+		int mMax;
+
+		struct UAVParameter
 		{
-			std::vector<char> datas;
-			int width, height, depth;
-			int elementSize;
+			size_t slot;
+			DXGI_FORMAT format;
+			size_t elementSize;
+		};
+		struct UAV
+		{
+			UAVParameter para;
+			Interface<ID3D11Texture3D> texture;
+			Interface<ID3D11UnorderedAccessView> uav;
 		};
 
+		std::map<size_t, UAV> mUAVs;
+		ID3D11Device* mDevice;
+		ID3D11DeviceContext* mContext;
+	};
+
+	class Voxelizer
+	{
 	public :
 		Voxelizer();
 		Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context);
@@ -132,54 +172,22 @@ namespace AHD
 
 		void setScale(float scale);
 		void setVoxelSize(float v);
-		void setUAVParameters(DXGI_FORMAT Format, UINT slot, size_t elemSize);
+		
 
-		void voxelize(Result& result, size_t count, VoxelResource** res);
+		void voxelize(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
 
 		void addEffect(Effect* effect);
 		void removeEffect(Effect* effect);
 
 		VoxelResource* createResource();
+		VoxelOutput* createOutput();
 
 	private:
-		void voxelizeImpl( VoxelResource* res);
-		bool prepare(size_t count, VoxelResource** res);
+		void voxelizeImpl(VoxelResource* res, size_t length);
+		bool prepare(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
 		void cleanResource();
-		void exportVoxels(Result& output);
 
 	private:
-		struct Size
-		{
-			size_t width;
-			size_t  height;
-			size_t  depth;
-			size_t  maxLength;
-
-			bool operator==(const Size& size)const
-			{
-				return width == size.width &&
-					height == size.height &&
-					depth == size.depth &&
-					maxLength == size.maxLength;
-			}
-
-			Size(size_t  w, size_t  h, size_t  d, size_t  m)
-				:width(w), height(h), depth(d), maxLength(m)
-			{
-			}
-
-			Size(size_t  w, size_t  h, size_t  d)
-				:width(w), height(h), depth(d)
-			{
-				maxLength = max(w, max(h, d));
-			}
-
-			Size()
-				:width(0), height(0), depth(0), maxLength(0)
-			{
-
-			}
-		};
 
 
 		VoxelResource* mCurrentResource;
@@ -192,18 +200,11 @@ namespace AHD
 		Interface<ID3D11Device> mDevice;
 		Interface<ID3D11DeviceContext>	 mContext;
 
-		Interface<ID3D11Texture3D> mOutputTexture3D = nullptr;
-		Interface<ID3D11UnorderedAccessView> mOutputUAV = nullptr;
-		DXGI_FORMAT mUAVFormat = DXGI_FORMAT_UNKNOWN;
-		size_t mUAVElementSize = 0;
-		UINT mUAVSlot = 1;
-		Size mUAVSize;
-
-
 		Interface<ID3D11Texture2D> mRenderTarget = nullptr;
 		Interface<ID3D11RenderTargetView> mRenderTargetView = nullptr;
 
 		std::vector<VoxelResource*> mResources;
+		std::vector<VoxelOutput*> mOutputs;
 	};
 }
 

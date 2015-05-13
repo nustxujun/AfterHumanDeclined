@@ -45,7 +45,7 @@ ID3D11Buffer*		optimizedVertices = NULL;
 ID3D11Buffer*		optimizedIndexes = NULL;
 size_t drawCount = 0;
 
-Voxelizer::Result		voxels;
+VoxelData		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
 
@@ -919,6 +919,9 @@ void optimizeVoxels()
 void voxelize(float s)
 {
 	Voxelizer v;
+	VoxelOutput* output = v.createOutput();
+	output->addUAV(1, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
+
 	v.setScale(s);
 
 	std::cout << "Voxelizing...";
@@ -975,11 +978,12 @@ void voxelize(float s)
 
 	buffer.swap(std::vector<char>());
 
-	v.setUAVParameters( DXGI_FORMAT_R8G8B8A8_UNORM, 1, 4);
 	v.addEffect(&sponzaEffect);
 
 
-	v.voxelize(voxels,subs.size(),subs.data());
+	v.voxelize(output, subs.size(), subs.data());
+
+	output->exportData(voxels, 1);
 
 
 	v.removeEffect(&sponzaEffect);
