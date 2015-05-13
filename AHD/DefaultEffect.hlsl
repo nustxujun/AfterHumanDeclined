@@ -5,7 +5,7 @@ cbuffer ConstantBuffer : register(b0)
 	matrix Projection;
 }
 
-RWTexture3D<float4> voxels:register(u1);//rendertarget is using u0
+RWTexture3D<unsigned int> voxels:register(u1);//rendertarget is using u0
 
 struct VS_INPUT
 {
@@ -38,7 +38,7 @@ PS_INPUT vs(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 float4 ps(PS_INPUT input) : SV_Target
 {
-	voxels[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = float4(1,1,1,1);
+	voxels[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = 1;
 
 	return float4(1, 1, 1, 1);
 }

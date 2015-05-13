@@ -27,7 +27,7 @@ void DefaultEffect::init(ID3D11Device* device)
 		D3D11_INPUT_ELEMENT_DESC desc[] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
 
 		ID3DBlob* blob;
-		CHECK_RESULT(Helper::compileShader(&blob, "voxelizer.hlsl", "vs", "vs_5_0", NULL), 
+		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "vs", "vs_5_0", NULL), 
 					 "fail to compile vertex shader, cant use gpu voxelizer");
 		CHECK_RESULT(device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout), 
 					 "fail to create mLayout,  cant use gpu voxelizer");
@@ -39,7 +39,7 @@ void DefaultEffect::init(ID3D11Device* device)
 
 	{
 		ID3DBlob* blob;
-		CHECK_RESULT(Helper::compileShader(&blob, "voxelizer.hlsl", "ps", "ps_5_0", NULL), 
+		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "ps", "ps_5_0", NULL), 
 					 "fail to compile pixel shader,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader), 
 					 "fail to create pixel shader, cant use gpu voxelizer");
