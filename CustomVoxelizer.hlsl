@@ -8,7 +8,7 @@ cbuffer ConstantBuffer : register(b0)
 }
 
 RWTexture3D<float4> voxels:register(u1);//rendertarget is using u0
-SamplerState samLinear : register(s0);
+SamplerState texsampler : register(s0);
 Texture2D texDiffuse : register(t0);
 
 struct VS_INPUT
@@ -45,7 +45,7 @@ float4 ps(PS_INPUT input) : SV_Target
 {
 	voxels[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = saturate(
 #ifdef HAS_TEXTURE
-	texDiffuse.Sample(samLinear, input.Texcoord) *
+	texDiffuse.Sample(texsampler, input.Texcoord) *
 #endif
 		(diffuse + ambient));
 	return float4(1, 1, 1, 1);

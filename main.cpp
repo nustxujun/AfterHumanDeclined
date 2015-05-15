@@ -373,7 +373,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				XMMATRIX rot1 = XMMatrixRotationAxis(camera.up, (mousepos.x - lastX) / 100.0f);
 				XMMATRIX rot2 = XMMatrixRotationAxis(left, (mousepos.y - lastY) / 100.0f);
 
-				camera.dir = XMVector4Transform(camera.dir, rot2 * rot1);
+				camera.dir = XMVector4Transform(camera.dir, rot1 * rot2);
 			}
 			else if (mButtonState[MouseMid])
 			{
@@ -722,7 +722,7 @@ void optimizeVoxels()
 
 
 
-	const char* data = voxels.datas.data();
+	const int* data = (const int *)voxels.datas.data();
 	int width = voxels.width;
 	int height = voxels.height;
 	int depth = voxels.depth;
@@ -730,16 +730,16 @@ void optimizeVoxels()
 
 	std::vector<Block> blocks(count);
 
-	auto getVoxel = [&data, width, height, depth](int x, int y, int z)->int*
+	auto getVoxel = [&data, width, height, depth](int x, int y, int z)->const int*
 	{
 		if (x < width && y < height && z < depth)
-			return (int*)data + x + y * width + z * height * width;
+			return data + x + y * width + z * height * width;
 		return nullptr;
 	};
 
 	auto checkBlock = [](Block& b1, Block& b2, FaceType face)
 	{
-		if (b1.color == b2.color )
+		if ( !((b1.color == 0) ^ (b2.color == 0)) )
 			return;
 
 		if (b1.color == 0)
@@ -859,14 +859,14 @@ void optimizeVoxels()
 		{
 			const Pos& p = pos[i].p;
 			int * color = getVoxel(p.x, p.y, p.z);
-			if (color == nullptr)
+			if (color == nullptr)//out of range
 				continue;
 			Block& next = blocks[getIndex(p.x, p.y, p.z)];
 			if (next.check != C_INSERT)
 			{
+				next = { p, next.face | (p.x ? 0 : N_X) | (p.y ? 0 : N_Y) | (p.z ? 0 : N_Z), *color, C_INSERT };
 				testQueue.push_back(&next);
 			}
-			next = { p, next.face | (p.x ? 0 : N_X) | (p.y ? 0 : N_Y) | (p.z ? 0 : N_Z), *color, C_INSERT };
 			checkBlock(b, next, pos[i].f);
 
 		}
