@@ -739,7 +739,7 @@ void optimizeVoxels()
 
 	auto checkBlock = [](Block& b1, Block& b2, FaceType face)
 	{
-		if ( !((b1.color == 0) ^ (b2.color == 0)) )
+		if ( (b1.color == 0) == (b2.color == 0) )
 			return;
 
 		if (b1.color == 0)
@@ -858,7 +858,7 @@ void optimizeVoxels()
 		for (int i = 0; i < 3; ++i)
 		{
 			const Pos& p = pos[i].p;
-			int * color = getVoxel(p.x, p.y, p.z);
+			const int * color = getVoxel(p.x, p.y, p.z);
 			if (color == nullptr)//out of range
 				continue;
 			Block& next = blocks[getIndex(p.x, p.y, p.z)];
