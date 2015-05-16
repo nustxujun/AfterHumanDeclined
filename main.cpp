@@ -864,7 +864,14 @@ void optimizeVoxels()
 			Block& next = blocks[getIndex(p.x, p.y, p.z)];
 			if (next.check != C_INSERT)
 			{
-				next = { p, next.face | (p.x ? 0 : N_X) | (p.y ? 0 : N_Y) | (p.z ? 0 : N_Z), *color, C_INSERT };
+				next = { p, 0, *color, C_INSERT };
+				next.face =
+					(p.x ? 0 : N_X) |
+					(p.y ? 0 : N_Y) |
+					(p.z ? 0 : N_Z) |
+					(p.x == width - 1 ? P_X : 0) |
+					(p.y == height - 1 ? P_Y : 0) | 
+					(p.z == depth - 1 ? P_Z : 0) ;
 				testQueue.push_back(&next);
 			}
 			checkBlock(b, next, pos[i].f);
@@ -900,6 +907,8 @@ void optimizeVoxels()
 
 		testQueue.pop_front();
 	}
+
+	assert(!faces.empty());
 
 	if (optimizedVertices)
 		optimizedVertices->Release();
@@ -952,6 +961,7 @@ void voxelize(float s)
 			effects[i].effect = &sponzaEffect;
 		}
 
+
 		size_t size = shapes[i].mesh.positions.size() / 3;
 		const size_t stride = 12 + 8;
 		buffer.reserve(size * stride);
@@ -972,7 +982,6 @@ void voxelize(float s)
 		res->setEffect(&effects[i]);
 
 		subs.push_back(res);
-
 
 	}
 
