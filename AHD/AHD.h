@@ -47,6 +47,7 @@ namespace AHD
 		XMMATRIX view;
 		XMMATRIX proj;
 
+		size_t length;//rendertarget's width height and depth
 	};
 
 	class Effect

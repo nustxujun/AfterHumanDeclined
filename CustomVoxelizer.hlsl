@@ -5,6 +5,8 @@ cbuffer ConstantBuffer : register(b0)
 	matrix Projection;
 	float4 diffuse;
 	float4 ambient;
+
+	float length;
 }
 
 RWTexture3D<float4> voxels:register(u1);//rendertarget is using u0
@@ -43,6 +45,7 @@ PS_INPUT vs(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 float4 ps(PS_INPUT input) : SV_Target
 {
+	//voxels[int3(input.Pos.x, length - input.Pos.y,  input.Pos.z * length)] = saturate(
 	voxels[int3(input.rPos.x, input.rPos.y, input.rPos.z)] = saturate(
 #ifdef HAS_TEXTURE
 	texDiffuse.Sample(texsampler, input.Texcoord) *

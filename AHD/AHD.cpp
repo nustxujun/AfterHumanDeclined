@@ -483,7 +483,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, size_t length)
 	parameters.context = mContext;
 	parameters.world = mTranslation;
 	parameters.proj = mProjection;
-
+	parameters.length = length;
 	//we need to render 3 times from different views
 	const ViewPara views[] =
 	{

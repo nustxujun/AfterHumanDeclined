@@ -6,6 +6,8 @@
 #ifndef _TINY_OBJ_LOADER_H
 #define _TINY_OBJ_LOADER_H
 
+#define TINY_OBJ_LOADER_OLD_FLOAT_PARSER
+
 #include <string>
 #include <vector>
 #include <map>

@@ -83,6 +83,7 @@
   <ItemGroup>
     <ClInclude Include="3Party\FreeImage.h" />
     <ClInclude Include="3Party\tiny_obj_loader.h" />
+    <ClInclude Include="Effect.h" />
     <ClInclude Include="ring.h" />
     <ClInclude Include="TextureLoader.h" />
   </ItemGroup>

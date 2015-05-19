@@ -24,6 +24,7 @@
       <Filter>3Party\FreeImage</Filter>
     </ClInclude>
     <ClInclude Include="TextureLoader.h" />
+    <ClInclude Include="Effect.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
