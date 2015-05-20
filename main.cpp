@@ -23,8 +23,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 0.08;
-const char* modelname = "sponza.obj";
+float scale = 20;
+const char* modelname = "cup.obj";
 
 
 

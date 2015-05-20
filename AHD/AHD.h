@@ -47,7 +47,10 @@ namespace AHD
 		XMMATRIX view;
 		XMMATRIX proj;
 
-		size_t length;//rendertarget's width height and depth
+		float width;
+		float height;
+		float depth;
+		size_t viewport;// from 0 to 2 
 	};
 
 	class Effect
@@ -144,7 +147,6 @@ namespace AHD
 		int mWidth;
 		int mHeight;
 		int mDepth;
-		int mMax;
 
 		struct UAVParameter
 		{
@@ -184,8 +186,8 @@ namespace AHD
 		VoxelOutput* createOutput();
 
 	private:
-		void voxelizeImpl(VoxelResource* res, size_t length);
-		bool prepare(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
+		void voxelizeImpl(VoxelResource* res, const Vector3& range);
+		Vector3 prepare(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
 		void cleanResource();
 
 	private:
@@ -200,9 +202,6 @@ namespace AHD
 
 		Interface<ID3D11Device> mDevice;
 		Interface<ID3D11DeviceContext>	 mContext;
-
-		Interface<ID3D11Texture2D> mRenderTarget = nullptr;
-		Interface<ID3D11RenderTargetView> mRenderTargetView = nullptr;
 
 		std::vector<VoxelResource*> mResources;
 		std::vector<VoxelOutput*> mOutputs;

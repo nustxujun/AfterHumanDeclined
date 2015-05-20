@@ -76,6 +76,15 @@ namespace AHD
 			if (cmp.z > z) z = cmp.z;
 		}
 
+		inline bool operator != (const Vector3& rkVector) const
+		{
+			return (x != rkVector.x || y != rkVector.y || z != rkVector.z);
+		}
+
+		inline bool operator == (const Vector3& rkVector) const
+		{
+			return (x == rkVector.x && y == rkVector.y && z == rkVector.z);
+		}
 
 		static const Vector3 ZERO;
 		static const Vector3 UNIT_X;
@@ -123,6 +132,15 @@ namespace AHD
 		{
 			return mMax;
 		}
+
+		Vector3 getCenter(void) const
+		{
+			return Vector3(
+				(mMax.x + mMin.x) * 0.5f,
+				(mMax.y + mMin.y) * 0.5f,
+				(mMax.z + mMin.z) * 0.5f);
+		}
+
 
 		inline bool isValid()const
 		{

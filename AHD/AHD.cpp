@@ -282,6 +282,9 @@ void VoxelOutput::reset()
 	for (auto& i : mUAVs)
 	{
 		UAV& uav = i.second;
+
+		if (!uav.uav.isNull())
+			continue;
 		uav.texture.release();
 		uav.uav.release();
 
@@ -328,8 +331,7 @@ Voxelizer::~Voxelizer()
 
 void Voxelizer::cleanResource()
 {
-	mRenderTarget.release();
-	mRenderTargetView.release();
+
 
 }
 
@@ -344,10 +346,10 @@ void Voxelizer::setScale(float v)
 	mScale = v;
 }
 
-bool Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** res)
+Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** res)
 {
 	if (res == nullptr)
-		return false;
+		return Vector3::ZERO;
 
 	AABB aabb;
 	for (size_t i = 0; i < count; ++i)
@@ -358,40 +360,39 @@ bool Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** res)
 
 
 	float scale = mScale / mVoxelSize;
-	Vector3 osize = aabb.getSize() * scale;
-	osize += Vector3::UNIT_SCALE;
-	int width = (int)std::ceil(osize.x);
-	int height = (int)std::ceil(osize.y);
-	int depth = (int)std::ceil(osize.z);
-	int max = std::max(width, std::max(height, depth));
+	Vector3 osize = aabb.getSize();
+	//osize += Vector3::UNIT_SCALE;
+
 
 	//transfrom
-	Vector3 min = aabb.getMin() * scale;
-	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-min.x, -min.y, -min.z)) *
-		XMMatrixScaling(scale, scale, scale);
-	mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(0, (float)max, 0, (float)max, 0, (float)max));
+	Vector3 center = aabb.getCenter();
 
-	if (width == output->mWidth &&
-		height == output->mHeight &&
-		depth == output->mDepth)
-		return true;
+	Vector3 min = -osize / 2;
+	Vector3 max = osize / 2;
 
-	output->mWidth = width;
-	output->mHeight = height;
-	output->mDepth = depth;
-	output->mMax = max;
+	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-center.x, -center.y, -center.z));
+	//mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(
+	//	min.z, max.z, min.y, max.y, min.x, max.x));
+
+	//if (width == output->mWidth &&
+	//	height == output->mHeight &&
+	//	depth == output->mDepth)
+	//	return true;
+
+	output->mWidth = std::ceil(osize.x * scale);
+	output->mHeight = std::ceil(osize.y* scale);
+	output->mDepth = std::ceil(osize.z * scale);
 
 	output->reset();
 
-	CHECK_RESULT(Helper::createRenderTarget(&mRenderTarget, &mRenderTargetView, mDevice, max, max),
-				 "failed to create rendertarget,  cant use gpu voxelizer");
-	return true;
+	return osize ;
 }
 
 
 void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 {
-	if (!prepare(output,count, res))
+	Vector3 range;
+	if ((range = prepare(output, count, res)) == Vector3::ZERO)
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
@@ -399,19 +400,12 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 	for (auto & i : output->mUAVs)
 	{
 		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
-			1, &mRenderTargetView, NULL, i.second.para.slot, 1, &i.second.uav, NULL);
+			0, 0, NULL, i.second.para.slot, 1, &i.second.uav, NULL);
 		UINT initcolor[4] = { 0 };
 		mContext->ClearUnorderedAccessViewUint(i.second.uav, initcolor);
 	}
 
-	D3D11_VIEWPORT vp;
-	vp.Width = (FLOAT)output->mMax;
-	vp.Height = (FLOAT)output->mMax;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	vp.TopLeftX = 0;
-	vp.TopLeftY = 0;
-	mContext->RSSetViewports(1, &vp);
+
 
 	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
@@ -435,13 +429,15 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 
 	for (size_t i = 0; i < count; ++i)
 	{
-		voxelizeImpl(res[i], output->mMax);
+		voxelizeImpl(res[i], range);
 	}
 
 }
 
-void Voxelizer::voxelizeImpl(VoxelResource* res, size_t length)
+void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 {
+
+
 	UINT stride = res->mVertexStride;
 	UINT offset = 0;
 	mContext->IASetVertexBuffers(0, 1, &res->mVertexBuffer, &stride, &offset);
@@ -475,30 +471,57 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, size_t length)
 		Vector3 eye;
 		Vector3 at;
 		Vector3 up;
+		float width;
+		float height;
+		float depth;
 	};
 
+	const float scale = mScale / mVoxelSize;
 
 	EffectParameter parameters;
 	parameters.device = mDevice;
 	parameters.context = mContext;
 	parameters.world = mTranslation;
 	parameters.proj = mProjection;
-	parameters.length = length;
+	parameters.width = ceil(range.x * scale);
+	parameters.height = ceil(range.y * scale);
+	parameters.depth = ceil(range.z * scale);
+
+
+
+
 	//we need to render 3 times from different views
 	const ViewPara views[] =
 	{
-		Vector3::ZERO, Vector3::UNIT_Z * (float)length, Vector3::UNIT_Y,
-		Vector3::UNIT_X * (float)length, Vector3::ZERO, Vector3::UNIT_Y,
-		Vector3::UNIT_Y * (float)length, Vector3::ZERO, Vector3::UNIT_Z,
+		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y, range.z, range.y, range.x,
+		Vector3::ZERO, Vector3::NEGATIVE_UNIT_Y, Vector3::UNIT_Z, range.x, range.z, -range.y,
+		Vector3::ZERO, Vector3::UNIT_Z , Vector3::UNIT_Y, range.x, range.y,range.z,
 	};
 
-	for (const ViewPara& v : views)
+	size_t arraysize = ARRAYSIZE(views);
+
+	for (size_t i = 0; i < arraysize; ++i)
 	{
+		const ViewPara& v = views[i];
 		const XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
 		const XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
 		const XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
-		parameters.view = XMMatrixLookAtLH(Eye, At, Up);
-		parameters.view = XMMatrixTranspose(parameters.view);
+
+		parameters.view = XMMatrixTranspose(XMMatrixLookToLH(Eye, At, Up));
+		parameters.viewport = i;
+
+		Vector3 half = Vector3(v.width, v.height, v.depth) / 2;
+		parameters.proj = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(
+			-half.x, half.x, -half.y, half.y, -half.z, half.z));
+
+		D3D11_VIEWPORT vp;
+		vp.Width = ceil(v.width * scale);
+		vp.Height = ceil(v.height * scale);
+		vp.MinDepth = 0.0f;
+		vp.MaxDepth = 1.0f;
+		vp.TopLeftX = 0;
+		vp.TopLeftY = 0;
+		mContext->RSSetViewports(1, &vp);
 
 		res->mEffect->update(parameters);
 

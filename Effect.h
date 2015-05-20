@@ -17,7 +17,10 @@ public:
 		float diffuse[4];
 		float ambient[4];
 
-		float length;
+		float width;
+		float height;
+		float depth;
+		size_t viewport;
 	}mConstant;
 
 	enum
@@ -116,7 +119,11 @@ public:
 	void update(AHD::EffectParameter& paras)
 	{
 		memcpy(&mConstant.world, &paras.world, sizeof(XMMATRIX)* 3);
-		mConstant.length = paras.length;
+		mConstant.width = paras.width;
+		mConstant.height = paras.height;
+		mConstant.depth = paras.depth;
+
+		mConstant.viewport = paras.viewport;
 		paras.context->UpdateSubresource(mConstantBuffer, 0, NULL, &mConstant, 0, 0);
 	}
 
