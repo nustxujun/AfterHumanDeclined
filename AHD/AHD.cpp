@@ -21,6 +21,7 @@ using namespace AHD;
 
 typedef D3D11Helper Helper;
 
+
 void DefaultEffect::init(ID3D11Device* device)
 {
 	{
@@ -371,17 +372,14 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 	Vector3 max = osize / 2;
 
 	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-center.x, -center.y, -center.z));
-	//mProjection = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(
-	//	min.z, max.z, min.y, max.y, min.x, max.x));
 
-	//if (width == output->mWidth &&
-	//	height == output->mHeight &&
-	//	depth == output->mDepth)
-	//	return true;
 
-	output->mWidth = std::ceil(osize.x * scale);
-	output->mHeight = std::ceil(osize.y* scale);
-	output->mDepth = std::ceil(osize.z * scale);
+	float ml = std::max(osize.x, std::max(osize.y, osize.z));
+	osize.x = osize.y = osize.z = ml;
+
+	output->mWidth = osize.x * scale;
+	output->mHeight = osize.y* scale;
+	output->mDepth = osize.z * scale;
 
 	output->reset();
 
@@ -483,9 +481,9 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 	parameters.context = mContext;
 	parameters.world = mTranslation;
 	parameters.proj = mProjection;
-	parameters.width = ceil(range.x * scale);
-	parameters.height = ceil(range.y * scale);
-	parameters.depth = ceil(range.z * scale);
+	parameters.width = range.x * scale;
+	parameters.height = range.y * scale;
+	parameters.depth = range.z * scale;
 
 
 
@@ -493,7 +491,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 	//we need to render 3 times from different views
 	const ViewPara views[] =
 	{
-		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y, range.z, range.y, range.x,
+		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y, -range.z, range.y, range.x,
 		Vector3::ZERO, Vector3::NEGATIVE_UNIT_Y, Vector3::UNIT_Z, range.x, range.z, -range.y,
 		Vector3::ZERO, Vector3::UNIT_Z , Vector3::UNIT_Y, range.x, range.y,range.z,
 	};
@@ -515,8 +513,8 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 			-half.x, half.x, -half.y, half.y, -half.z, half.z));
 
 		D3D11_VIEWPORT vp;
-		vp.Width = ceil(v.width * scale);
-		vp.Height = ceil(v.height * scale);
+		vp.Width = abs(v.width) * scale;
+		vp.Height = v.height * scale;
 		vp.MinDepth = 0.0f;
 		vp.MaxDepth = 1.0f;
 		vp.TopLeftX = 0;
