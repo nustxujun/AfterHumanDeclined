@@ -222,10 +222,6 @@ VoxelOutput::VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context)
 
 void VoxelOutput::addUAV(size_t slot, DXGI_FORMAT format, size_t elementSize)
 {
-	if (slot == 0)
-	{
-		EXCEPT("slot 0 is almost using for rendertarget.");
-	}
 	UAV uav = { slot, format, elementSize };
 	if (!mUAVs.insert(std::make_pair(slot, uav)).second)
 	{
@@ -370,11 +366,15 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 	//transfrom
 	Vector3 center = aabb.getCenter();
 
-	Vector3 min = -osize / 2;
-	Vector3 max = osize / 2;
 
 	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-center.x, -center.y, -center.z));
-
+	
+	//float max = std::max(osize.x, std::max(osize.y, osize.z)) + 1 / scale;
+	//osize = Vector3(max, max, max);
+	float ex = 2 / scale;
+	osize.x += ex;
+	osize.y += ex;
+	osize.z += ex;
 
 	float ml = std::max(osize.x, std::max(osize.y, osize.z));
 	osize.x = osize.y = osize.z = ml+ 2 / scale;
