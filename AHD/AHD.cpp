@@ -369,15 +369,10 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 
 	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-center.x, -center.y, -center.z));
 	
-	//float max = std::max(osize.x, std::max(osize.y, osize.z)) + 1 / scale;
-	//osize = Vector3(max, max, max);
 	float ex = 2 / scale;
 	osize.x += ex;
 	osize.y += ex;
 	osize.z += ex;
-
-	float ml = std::max(osize.x, std::max(osize.y, osize.z));
-	osize.x = osize.y = osize.z = ml+ 2 / scale;
 
 	output->mWidth = osize.x * scale;
 	output->mHeight = osize.y* scale;
