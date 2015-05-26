@@ -49,7 +49,7 @@ void DefaultEffect::init(ID3D11Device* device)
 	}
 
 
-	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(XMMATRIX) * 3), 
+	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(XMMATRIX) * 3 + sizeof(float) * 3 + sizeof(size_t)), 
 				 "fail to create constant buffer,  cant use gpu voxelizer");
 
 }
@@ -60,6 +60,7 @@ void DefaultEffect::prepare(ID3D11DeviceContext* context)
 	context->IASetInputLayout(mLayout);
 	context->PSSetShader(mPixelShader, NULL, 0);
 	context->VSSetConstantBuffers(0, 1, &mConstant);
+	context->PSSetConstantBuffers(0, 1, &mConstant);
 
 }
 
@@ -376,7 +377,7 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 
 
 	float ml = std::max(osize.x, std::max(osize.y, osize.z));
-	osize.x = osize.y = osize.z = ml;
+	osize.x = osize.y = osize.z = ml+ 2 / scale;
 
 	output->mWidth = osize.x * scale;
 	output->mHeight = osize.y* scale;
