@@ -132,7 +132,8 @@ void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t inde
 	mIndexStride = indexStride;
 
 	mIndexBuffer.release();
-	CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, indexCount * indexStride, indexes),
+	if (indexes != 0 && indexCount != 0 && indexStride != 0)
+		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, indexCount * indexStride, indexes),
 				 "fail to create index buffer,  cant use gpu voxelizer");
 }
 
