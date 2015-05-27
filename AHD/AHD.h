@@ -132,16 +132,16 @@ namespace AHD
 
 	class VoxelOutput
 	{
-		friend class Voxelizer;
 	public:
-		void addUAV(size_t slot, DXGI_FORMAT format, size_t elementSize);
+		void addUAVBuffer(size_t slot, size_t elementSize, size_t elementCount = ~0);
+		void addUAVTexture3D(size_t slot, DXGI_FORMAT format, size_t elementSize);
 		void removeUAV(size_t slot);
 
 		void exportData(VoxelData& data, size_t slot);
 
-	private:
-		void reset();
 		VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context);
+
+		void prepare( int width, int height, int depth);
 
 	private:
 		int mWidth;
@@ -153,11 +153,14 @@ namespace AHD
 			size_t slot;
 			DXGI_FORMAT format;
 			size_t elementSize;
+			bool isTexture;
+			size_t elementCount;
 		};
 		struct UAV
 		{
 			UAVParameter para;
 			Interface<ID3D11Texture3D> texture;
+			Interface<ID3D11Buffer> buffer;
 			Interface<ID3D11UnorderedAccessView> uav;
 		};
 

@@ -10,6 +10,7 @@ namespace AHD
 	{
 	public :
 		static HRESULT createDevice(ID3D11Device** device, ID3D11DeviceContext** context);
+		static HRESULT createUAVBuffer(ID3D11Buffer** buffer, ID3D11UnorderedAccessView** uav, ID3D11Device* device,size_t elementSize, size_t elementCount);
 		static HRESULT createUAVTexture3D(ID3D11Texture3D** buffer, ID3D11UnorderedAccessView** uav, ID3D11Device* device, DXGI_FORMAT format, int width, int height, int depth);
 		static HRESULT createRenderTarget(ID3D11Texture2D** target, ID3D11RenderTargetView** targetView, ID3D11Device* device, int width, int height);
 		static HRESULT createDepthStencil(ID3D11Texture2D** ds, ID3D11DepthStencilView** dsv, ID3D11Device* device, int width, int height);

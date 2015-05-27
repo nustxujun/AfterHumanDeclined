@@ -220,14 +220,24 @@ VoxelOutput::VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context)
 :mDevice(device), mContext(context)
 {}
 
-void VoxelOutput::addUAV(size_t slot, DXGI_FORMAT format, size_t elementSize)
+void VoxelOutput::addUAVTexture3D(size_t slot, DXGI_FORMAT format, size_t elementSize)
 {
-	UAV uav = { slot, format, elementSize };
+	UAV uav = { slot, format, elementSize ,true, ~0};
 	if (!mUAVs.insert(std::make_pair(slot, uav)).second)
 	{
 		EXCEPT("the slot is using for other uav");
 	}
 }
+
+void VoxelOutput::addUAVBuffer(size_t slot, size_t elementSize, size_t elementCount)
+{
+	UAV uav = { slot, DXGI_FORMAT_UNKNOWN, elementSize, false, elementCount };
+	if (!mUAVs.insert(std::make_pair(slot, uav)).second)
+	{
+		EXCEPT("the slot is using for other uav");
+	}
+}
+
 
 void VoxelOutput::removeUAV(size_t slot)
 {
@@ -276,19 +286,35 @@ void VoxelOutput::exportData(VoxelData& data, size_t slot)
 
 }
 
-void VoxelOutput::reset()
+void VoxelOutput::prepare( int width, int height, int depth)
 {
+	mWidth = width;
+	mHeight = height;
+	mDepth = depth;
+
 	for (auto& i : mUAVs)
 	{
 		UAV& uav = i.second;
 
-		if (!uav.uav.isNull())
-			continue;
 		uav.texture.release();
 		uav.uav.release();
+		uav.buffer.release();
+		if (uav.para.isTexture)
+		{
+			CHECK_RESULT(Helper::createUAVTexture3D(&uav.texture, &uav.uav, mDevice, uav.para.format, mWidth, mHeight, mDepth),
+						 "failed to create uav texture3D,  cant use gpu voxelizer");
+		}
+		else
+		{
+			size_t count = std::min(uav.para.elementCount,(size_t) mWidth * mHeight * mDepth);
+			CHECK_RESULT(Helper::createUAVBuffer( &uav.buffer, &uav.uav,mDevice, uav.para.elementSize, count),
+						 "failed to create uav buffer, cannot use gpu voxelizer");
+		}
 
-		CHECK_RESULT(Helper::createUAVTexture3D(&uav.texture, &uav.uav, mDevice, uav.para.format, mWidth, mHeight, mDepth),
-					 "failed to create uav texture3D,  cant use gpu voxelizer");
+		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
+			0, 0, NULL, uav.para.slot, 1, &uav.uav, NULL);
+		UINT initcolor[4] = { 0 };
+		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
 	}
 }
 
@@ -323,7 +349,7 @@ Voxelizer::~Voxelizer()
 
 	for (auto i : mEffects)
 	{
-		assert(0 && "effect need to remove");
+		i->clean();
 	}
 
 }
@@ -374,11 +400,9 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 	osize.y += ex;
 	osize.z += ex;
 
-	output->mWidth = osize.x * scale;
-	output->mHeight = osize.y* scale;
-	output->mDepth = osize.z * scale;
 
-	output->reset();
+
+	output->prepare(osize.x * scale, osize.y* scale, osize.z * scale);
 
 	return osize ;
 }
@@ -391,16 +415,6 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
-	//bind uav
-	for (auto & i : output->mUAVs)
-	{
-		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
-			0, 0, NULL, i.second.para.slot, 1, &i.second.uav, NULL);
-		UINT initcolor[4] = { 0 };
-		mContext->ClearUnorderedAccessViewUint(i.second.uav, initcolor);
-	}
-
-
 
 	//no need to cull
 	Interface<ID3D11RasterizerState> rasterizerState;
