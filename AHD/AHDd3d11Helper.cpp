@@ -65,7 +65,7 @@ HRESULT D3D11Helper::createUAVTexture3D(ID3D11Texture3D** buffer, ID3D11Unordere
 	TextureData.Width = width;
 	TextureData.Format = format;
 	TextureData.CPUAccessFlags = 0;
-	TextureData.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS;
+	TextureData.BindFlags =  D3D11_BIND_UNORDERED_ACCESS;
 	TextureData.MipLevels = 1;
 	TextureData.MiscFlags = 0;
 	TextureData.Usage = D3D11_USAGE_DEFAULT;
