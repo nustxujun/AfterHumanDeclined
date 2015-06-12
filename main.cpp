@@ -791,7 +791,7 @@ void voxelize(float s)
 {
 	Voxelizer v;
 	VoxelOutput* output = v.createOutput();
-	output->addUAV(1, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
+	output->addUAVTexture3D(1, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
 
 	v.setScale(s);
 
