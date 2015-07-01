@@ -77,7 +77,7 @@ namespace AHD
 		ID3D11Buffer* mConstant;
 
 	public :
-		static const DXGI_FORMAT OUTPUT_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
+		static const DXGI_FORMAT OUTPUT_FORMAT = DXGI_FORMAT_R32_UINT;
 		static const UINT SLOT = 1;
 		static const size_t ELEM_SIZE = 4;
 	};
