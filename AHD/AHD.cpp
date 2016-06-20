@@ -21,26 +21,55 @@ using namespace AHD;
 
 typedef D3D11Helper Helper;
 
-
-void DefaultEffect::init(ID3D11Device* device)
+namespace AHD
 {
+
+}
+
+
+void Effect::init(ID3D11Device* device, const std::map<Semantic, VertexDesc>& desc)
+{
+	auto end = desc.end();
+	bool usingTexture = desc.find(S_TEXCOORD) != end;
+	bool usingColor = desc.find(S_COLOR) != end;
+	std::vector<D3D10_SHADER_MACRO> macros;
+	if (usingTexture)
+		macros.push_back({ "USINGTEXTURE", "0" });
+
+	if (usingColor)
+		macros.push_back({ "USINGCOLOR", "0" });
+
+	if (!macros.empty())
+		macros.push_back({ NULL, NULL });
+
+
 	{
-		D3D11_INPUT_ELEMENT_DESC desc[] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
+		std::vector<D3D11_INPUT_ELEMENT_DESC> desc;
+		desc.push_back({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+		int offset = 12;
+		if (usingColor)
+		{
+			desc.push_back({ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, offset, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+			offset += 4;
+		}
+		if (usingTexture)
+		{
+			desc.push_back({ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offset, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+		}
 
 		ID3DBlob* blob;
-		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "vs", "vs_5_0", NULL), 
+		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "vs", "vs_5_0", macros.data()),
 					 "fail to compile vertex shader, cant use gpu voxelizer");
-		CHECK_RESULT(device->CreateInputLayout(desc, ARRAYSIZE(desc), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout), 
+		CHECK_RESULT(device->CreateInputLayout(desc.data(), desc.size(), blob->GetBufferPointer(), blob->GetBufferSize(), &mLayout),
 					 "fail to create mLayout,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mVertexShader), 
 					 "fail to create vertex shader,  cant use gpu voxelizer");
 		blob->Release();
 	}
 
-
 	{
 		ID3DBlob* blob;
-		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "ps", "ps_5_0", NULL), 
+		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "ps", "ps_5_0", macros.data()),
 					 "fail to compile pixel shader,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader), 
 					 "fail to create pixel shader, cant use gpu voxelizer");
@@ -54,7 +83,7 @@ void DefaultEffect::init(ID3D11Device* device)
 
 }
 
-void DefaultEffect::prepare(ID3D11DeviceContext* context)
+void Effect::prepare(ID3D11DeviceContext* context)
 {
 	context->VSSetShader(mVertexShader, NULL, 0);
 	context->IASetInputLayout(mLayout);
@@ -64,14 +93,14 @@ void DefaultEffect::prepare(ID3D11DeviceContext* context)
 
 }
 
-void DefaultEffect::update(EffectParameter& paras)
+void Effect::update(EffectParameter& paras)
 {
 	paras.context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
 
 }
 
 
-void DefaultEffect::clean()
+void Effect::clean()
 {
 	mConstant->Release();
 	mVertexShader->Release();
@@ -79,73 +108,67 @@ void DefaultEffect::clean()
 	mPixelShader->Release();
 }
 
-void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, size_t posoffset )
+void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size)
 {
-	mVertexStride = vertexStride;
-	mVertexCount = vertexCount;
-	mPositionOffset = posoffset;
+	const VertexDesc* pos = nullptr;
+	const VertexDesc* color = nullptr;
+	const VertexDesc* uv = nullptr;
+	for (size_t i = 0; i < size; ++i)
+	{
+		switch (desc[i].semantic)
+		{
+		case S_POSITION: pos = desc + i; break;
+		case S_COLOR: color = desc + i; break;
+		case S_TEXCOORD: uv = desc + i; break;
+		default:
+			break;
+		}
+		mDesc[desc[i].semantic] = desc[i];
+	}
 
-	//calculate the max size
+
+	int newVertexStride = pos->size + (uv?uv->size:0) + (color?color->size:0);
+	mVertexStride = newVertexStride;
+	mVertexCount = vertexCount;
+
 	mAABB.setNull();
 	size_t buffersize = vertexCount * vertexStride;
+	mVertexData.resize(buffersize);
 	{
+
 		const char* begin = (const char*)vertices;
 		const char* end = begin + buffersize;
+		char* wbegin = mVertexData.data();
 		for (; begin != end; begin += vertexStride)
 		{
-			Vector3 v = (*(const Vector3*)begin) ;
+			Vector3 v = (*(const Vector3*)(begin + pos->offset));
 			mAABB.merge(v);
+			memcpy(wbegin, begin + pos->offset, pos->offset);
+			wbegin += pos->size;
+			if (color)
+			{
+				memcpy(wbegin, begin + color->offset, color->size);
+				wbegin += color->size;
+			}
+			if (uv)
+			{
+				memcpy(wbegin, begin + uv->offset, uv->size);
+				wbegin += color->size;
+			}
+
 		}
 	}
 
-	mNeedCalSize = false;
-
-	mVertexBuffer.release();
-	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, vertexCount * vertexStride, vertices),
-				 "fail to create vertex buffer,  cant use gpu voxelizer");
-
-
 }
 
-void VoxelResource::setVertexFromVoxelResource(VoxelResource* res)
-{
-	mAABB = res->mAABB;
-
-	setVertex(res->mVertexBuffer, res->mVertexCount, res->mVertexStride, res->mPositionOffset);
-}
-
-void VoxelResource::setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, size_t vertexStride, size_t posoffset )
-{
-	mVertexStride = vertexStride;
-	mVertexCount = vertexCount;
-	mPositionOffset = posoffset;
-
-	vertexBuffer->AddRef();
-	mVertexBuffer.release();
-	mVertexBuffer = vertexBuffer;
-
-	mNeedCalSize = true;
-}
 
 void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t indexStride)
 {
-	mIndexCount = indexCount;
+	size_t size = indexCount * indexStride;
+	mIndexData.resize(size);
+	memcpy(mIndexData.data(), indexes, size);
 	mIndexStride = indexStride;
-
-	mIndexBuffer.release();
-	if (indexes != 0 && indexCount != 0 && indexStride != 0)
-		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, indexCount * indexStride, indexes),
-				 "fail to create index buffer,  cant use gpu voxelizer");
-}
-
-void VoxelResource::setIndex(ID3D11Buffer* indexBuffer, size_t indexCount, size_t indexStride)
-{
 	mIndexCount = indexCount;
-	mIndexStride = indexStride;
-
-	indexBuffer->AddRef();
-	mIndexBuffer.release();
-	mIndexBuffer = indexBuffer;
 }
 
 VoxelResource::VoxelResource(ID3D11Device* device)
@@ -159,62 +182,18 @@ VoxelResource::~VoxelResource()
 
 }
 
-void VoxelResource::setEffect(Effect* effect)
-{
-	mEffect = effect;
-}
-
-
-
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
-	if (!mNeedCalSize)
-		return;
+	if (mVertexBuffer.isNull())
+	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mVertexData.size(), mVertexData.data()),
+		"fail to create vertex buffer,  cant use gpu voxelizer");
 
-	if (mVertexBuffer == nullptr)
-		return;
-
-
-	mAABB.setNull();
-	D3D11_BUFFER_DESC desc;
-	mVertexBuffer->GetDesc(&desc);
-
-	auto calSize = [this](ID3D11DeviceContext* context, ID3D11Buffer* buffer, size_t count , size_t stride, size_t offset)
-	{
-		D3D11_MAPPED_SUBRESOURCE mr;
-		context->Map(buffer, 0, D3D11_MAP_READ, 0, &mr);
-
-		size_t buffersize = count * stride;
-		{
-			const char* begin = (const char*)mr.pData;
-			const char* end = begin + buffersize;
-			for (; begin != end; begin += stride)
-			{
-				Vector3 v = (*(const Vector3*)(begin + offset));
-				mAABB.merge(v);
-			}
-		}
-
-		context->Unmap(buffer, 0);
-	};
-
-	if ((desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ) != 0)
-	{
-		calSize(context, mVertexBuffer, mVertexCount, mVertexStride, mPositionOffset);
-	}
-	else
-	{
-		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		desc.BindFlags = 0;
-		desc.Usage = D3D11_USAGE_STAGING;
-		ID3D11Buffer* tmp = 0;
-		CHECK_RESULT(mDevice->CreateBuffer(&desc, nullptr, &tmp),
-					 "fail to create temp buffer for reading.");
-		context->CopyResource(tmp, mVertexBuffer);
-		calSize(context, tmp, mVertexCount, mVertexStride, mPositionOffset);
-		tmp->Release();
-	}
+	if (mIndexBuffer.isNull())
+	if (!mIndexData.empty())
+		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mIndexData.size(), mIndexData.data()),
+		"fail to create index buffer,  cant use gpu voxelizer");
 }
+
 
 VoxelOutput::VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context)
 :mDevice(device), mContext(context)
@@ -272,10 +251,10 @@ void VoxelOutput::exportData(VoxelData& data, size_t slot)
 	int stride = ret->second.para.elementSize * mWidth;
 	data.datas.reserve(stride * mHeight * mDepth);
 	char* begin = data.datas.data();
-	for (size_t z = 0; z < mDepth; ++z)
+	for (int z = 0; z < mDepth; ++z)
 	{
 		const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-		for (size_t y = 0; y < mHeight; ++y)
+		for (int y = 0; y < mHeight; ++y)
 		{
 			memcpy(begin, depth + mr.RowPitch * y, stride);
 			begin += stride;
@@ -349,7 +328,8 @@ Voxelizer::~Voxelizer()
 
 	for (auto i : mEffects)
 	{
-		i->clean();
+		i.second->clean();
+		delete i.second;
 	}
 
 }
@@ -443,6 +423,26 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 
 }
 
+Effect* Voxelizer::getEffect(VoxelResource* res)
+{
+	auto end = res->mDesc.end();
+	bool usingTexture = res->mDesc.find(S_TEXCOORD) != end;
+	bool usingColor = res->mDesc.find(S_COLOR) != end;
+	int hash = 1 + (usingColor ? 0 : 2) + (usingTexture ? 0 : 4);
+
+	auto ret = mEffects.find(hash);
+	if (ret == mEffects.end())
+	{
+		Effect* effect = new Effect();
+		effect->init(mDevice, res->mDesc);
+		mEffects[hash] = effect;
+		return effect;
+	}
+	else
+		return ret->second;
+}
+
+
 void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 {
 
@@ -472,8 +472,8 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 		count = res->mIndexCount;
 	}
 
-	res->mEffect->prepare(mContext);
-
+	Effect* effect = getEffect(res);
+	effect->prepare(mContext);
 
 	struct ViewPara
 	{
@@ -532,7 +532,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 		vp.TopLeftY = 0;
 		mContext->RSSetViewports(1, &vp);
 
-		res->mEffect->update(parameters);
+		effect->update(parameters);
 
 		if (useIndex)
 			mContext->DrawIndexed(count, start, 0);
@@ -542,24 +542,6 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 	}
 
 }
-
-void Voxelizer::addEffect(Effect* effect)
-{
-	if (mEffects.insert(effect).second)
-		effect->init(mDevice);
-	
-}
-
-void Voxelizer::removeEffect(Effect* effect)
-{
-	auto ret = mEffects.find(effect);
-	if (ret != mEffects.end())
-	{
-		(*ret)->clean();
-		mEffects.erase(ret);
-	}
-}
-
 
 
 VoxelResource* Voxelizer::createResource()

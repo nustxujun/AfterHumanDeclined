@@ -53,20 +53,24 @@ namespace AHD
 		size_t viewport;// from 0 to 2 
 	};
 
-	class Effect
+	enum Semantic
 	{
-	public :
-		virtual void init(ID3D11Device* device) = 0;
-		virtual void prepare(ID3D11DeviceContext* context) = 0;
-		virtual void update(EffectParameter& paras) = 0;
-		virtual void clean() = 0;
-
+		S_POSITION,
+		S_COLOR,
+		S_TEXCOORD
 	};
 
-	class DefaultEffect :public Effect
+	struct VertexDesc
+	{
+		Semantic semantic;
+		size_t offset;
+		size_t size;
+	};
+
+	class Effect
 	{
 	public:
-		void init(ID3D11Device* device) ;
+		void init(ID3D11Device* device,const std::map<Semantic,VertexDesc>& desc);
 		void prepare(ID3D11DeviceContext* context);
 		void update(EffectParameter& paras);
 		void clean();
@@ -76,29 +80,25 @@ namespace AHD
 		ID3D11InputLayout* mLayout;
 		ID3D11Buffer* mConstant;
 
-	public :
+	public:
 		static const DXGI_FORMAT OUTPUT_FORMAT = DXGI_FORMAT_R32_UINT;
 		static const UINT SLOT = 1;
 		static const size_t ELEM_SIZE = 4;
 	};
 
+
 	class VoxelResource
 	{
 		friend class Voxelizer;
 
-	public :
-		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
-		void setVertex(ID3D11Buffer* vertexBuffer, size_t vertexCount, size_t vertexStride, size_t posoffset = 0);
-		void setVertexFromVoxelResource(VoxelResource* res);
 
-		
+	public :
+		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size);
 		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
-		void setIndex(ID3D11Buffer* indexBuffer, size_t indexCount, size_t indexStride);
 		void removeIndexes();
 
 		~VoxelResource();
 
-		void setEffect(Effect* effect);
 	private:
 		VoxelResource(ID3D11Device* device);
 		void prepare(ID3D11DeviceContext* context);
@@ -107,17 +107,18 @@ namespace AHD
 
 		Interface<ID3D11Buffer> mVertexBuffer = nullptr;
 		Interface<ID3D11Buffer> mIndexBuffer = nullptr;
-		size_t mVertexCount = 0;
-		size_t mVertexStride = 0;
-		size_t mPositionOffset = 0;
-		size_t mIndexCount = 0;
-		size_t mIndexStride = 0;
+		std::vector<char> mVertexData;
+		std::vector<char> mIndexData;
+		size_t mVertexStride;
+		size_t mIndexStride;
+		size_t mVertexCount;
+		size_t mIndexCount;
 
 		ID3D11Device* mDevice;
 
 		AABB mAABB;
-		bool mNeedCalSize = true;
-		Effect* mEffect = nullptr;
+
+		std::map<Semantic, VertexDesc> mDesc;
 	};
 
 	struct VoxelData
@@ -192,7 +193,7 @@ namespace AHD
 		void voxelizeImpl(VoxelResource* res, const Vector3& range);
 		Vector3 prepare(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
 		void cleanResource();
-
+		Effect* getEffect(VoxelResource* res);
 	private:
 
 
@@ -201,13 +202,15 @@ namespace AHD
 		float mVoxelSize = 1.0f;
 		XMMATRIX mTranslation;
 		XMMATRIX mProjection;
-		std::set<Effect*> mEffects;
+		std::map<int, Effect*> mEffects;
 
 		Interface<ID3D11Device> mDevice;
 		Interface<ID3D11DeviceContext>	 mContext;
 
 		std::vector<VoxelResource*> mResources;
 		std::vector<VoxelOutput*> mOutputs;
+
+		
 	};
 }
 
