@@ -118,13 +118,7 @@ public:
 
 	void update(AHD::EffectParameter& paras)
 	{
-		memcpy(&mConstant.world, &paras.world, sizeof(XMMATRIX)* 3);
-		mConstant.width = paras.width;
-		mConstant.height = paras.height;
-		mConstant.depth = paras.depth;
 
-		mConstant.viewport = paras.viewport;
-		paras.context->UpdateSubresource(mConstantBuffer, 0, NULL, &mConstant, 0, 0);
 	}
 
 	void clean()

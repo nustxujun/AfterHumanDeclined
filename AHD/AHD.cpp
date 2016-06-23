@@ -69,6 +69,14 @@ void Effect::init(ID3D11Device* device, const std::map<Semantic, VertexDesc>& de
 
 	{
 		ID3DBlob* blob;
+		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "gs", "gs_5_0", macros.data()),
+			"fail to compile geometry shader,  cant use gpu voxelizer");
+		CHECK_RESULT(device->CreateGeometryShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mGeometryShader),
+			"fail to create geometry shader, cant use gpu voxelizer");
+	}
+
+	{
+		ID3DBlob* blob;
 		CHECK_RESULT(Helper::compileShader(&blob, "DefaultEffect.hlsl", "ps", "ps_5_0", macros.data()),
 					 "fail to compile pixel shader,  cant use gpu voxelizer");
 		CHECK_RESULT(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), NULL, &mPixelShader), 
@@ -78,7 +86,7 @@ void Effect::init(ID3D11Device* device, const std::map<Semantic, VertexDesc>& de
 	}
 
 
-	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(XMMATRIX) * 3 + sizeof(float) * 3 + sizeof(size_t)), 
+	CHECK_RESULT(Helper::createBuffer(&mConstant, device, D3D11_BIND_CONSTANT_BUFFER, sizeof(EffectParameter)),
 				 "fail to create constant buffer,  cant use gpu voxelizer");
 
 }
@@ -88,15 +96,17 @@ void Effect::prepare(ID3D11DeviceContext* context)
 	context->VSSetShader(mVertexShader, NULL, 0);
 	context->IASetInputLayout(mLayout);
 	context->PSSetShader(mPixelShader, NULL, 0);
+	context->GSSetShader(mGeometryShader, NULL, 0);
+
 	context->VSSetConstantBuffers(0, 1, &mConstant);
 	context->PSSetConstantBuffers(0, 1, &mConstant);
+	context->GSSetConstantBuffers(0, 1, &mConstant);
 
 }
 
-void Effect::update(EffectParameter& paras)
+void Effect::update(ID3D11DeviceContext* context, EffectParameter& paras)
 {
-	paras.context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
-
+	context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
 }
 
 
@@ -106,6 +116,7 @@ void Effect::clean()
 	mVertexShader->Release();
 	mLayout->Release();
 	mPixelShader->Release();
+	mGeometryShader->Release();
 }
 
 void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size)
@@ -121,6 +132,7 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 		case S_COLOR: color = desc + i; break;
 		case S_TEXCOORD: uv = desc + i; break;
 		default:
+			EXCEPT("unexpected semantic")
 			break;
 		}
 		mDesc[desc[i].semantic] = desc[i];
@@ -143,7 +155,7 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 		{
 			Vector3 v = (*(const Vector3*)(begin + pos->offset));
 			mAABB.merge(v);
-			memcpy(wbegin, begin + pos->offset, pos->offset);
+			memcpy(wbegin, begin + pos->offset, pos->size);
 			wbegin += pos->size;
 			if (color)
 			{
@@ -171,6 +183,13 @@ void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t inde
 	mIndexCount = indexCount;
 }
 
+void VoxelResource::setTexture(size_t width, size_t height, void* data)
+{
+	size_t size = width * height;
+	mTextureData.resize(size);
+	memcpy(mTextureData.data(), data, size * sizeof(int));
+}
+
 VoxelResource::VoxelResource(ID3D11Device* device)
 	:mDevice(device)
 {
@@ -184,118 +203,83 @@ VoxelResource::~VoxelResource()
 
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
-	if (mVertexBuffer.isNull())
+	if (!mVertexData.empty())
 	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mVertexData.size(), mVertexData.data()),
 		"fail to create vertex buffer,  cant use gpu voxelizer");
 
-	if (mIndexBuffer.isNull())
 	if (!mIndexData.empty())
 		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mIndexData.size(), mIndexData.data()),
 		"fail to create index buffer,  cant use gpu voxelizer");
-}
 
-
-VoxelOutput::VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context)
-:mDevice(device), mContext(context)
-{}
-
-void VoxelOutput::addUAVTexture3D(size_t slot, DXGI_FORMAT format, size_t elementSize)
-{
-	UAV uav = { slot, format, elementSize ,true, ~0};
-	if (!mUAVs.insert(std::make_pair(slot, uav)).second)
+	if (!mTextureData.empty())
 	{
-		EXCEPT("the slot is using for other uav");
-	}
-}
-
-void VoxelOutput::addUAVBuffer(size_t slot, size_t elementSize, size_t elementCount)
-{
-	UAV uav = { slot, DXGI_FORMAT_UNKNOWN, elementSize, false, elementCount };
-	if (!mUAVs.insert(std::make_pair(slot, uav)).second)
-	{
-		EXCEPT("the slot is using for other uav");
-	}
-}
-
-
-void VoxelOutput::removeUAV(size_t slot)
-{
-	mUAVs.erase(slot);
-}
-
-void VoxelOutput::exportData(VoxelData& data, size_t slot)
-{
-	auto ret = mUAVs.find(slot);
-	if (ret == mUAVs.end())
-		return;
-
-	data.width = mWidth;
-	data.height = mHeight;
-	data.depth = mDepth;
-
-	Interface<ID3D11Texture3D> debug = NULL;
-	D3D11_TEXTURE3D_DESC dsDesc;
-	ret->second.texture->GetDesc(&dsDesc);
-	dsDesc.BindFlags = 0;
-	dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	dsDesc.MiscFlags = 0;
-	dsDesc.Usage = D3D11_USAGE_STAGING;
-
-	CHECK_RESULT(mDevice->CreateTexture3D(&dsDesc, NULL, &debug),
-				 "fail to create staging buffer, cant use gpu voxelizer");
-
-	mContext->CopyResource(debug, ret->second.texture);
-	D3D11_MAPPED_SUBRESOURCE mr;
-	mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
-
-	int stride = ret->second.para.elementSize * mWidth;
-	data.datas.reserve(stride * mHeight * mDepth);
-	char* begin = data.datas.data();
-	for (int z = 0; z < mDepth; ++z)
-	{
-		const char* depth = ((const char*)mr.pData + mr.DepthPitch * z);
-		for (int y = 0; y < mHeight; ++y)
 		{
-			memcpy(begin, depth + mr.RowPitch * y, stride);
-			begin += stride;
+			D3D11_TEXTURE2D_DESC desc;
+			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.Width = mTexWidth;
+			desc.Height = mTexHeight;
+			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			desc.MipLevels = 1;
+			desc.ArraySize = 1;
+			desc.CPUAccessFlags = 0;
+			desc.SampleDesc.Count = 1;
+			desc.SampleDesc.Quality = 0;
+			desc.MiscFlags = 0;
+			desc.Usage = D3D11_USAGE_DEFAULT;
+
+			D3D11_SUBRESOURCE_DATA initdata;
+			initdata.pSysMem = mTextureData.data();
+			initdata.SysMemPitch = 4 * mTexWidth;
+			initdata.SysMemSlicePitch = 4 * mTexWidth * mTexHeight;
+			CHECK_RESULT(mDevice->CreateTexture2D(&desc, &initdata, &mTexture), "fail to create texture2d");
+		}
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			desc.Texture2D.MostDetailedMip = 0;
+			desc.Texture2D.MipLevels = -1;
+			CHECK_RESULT(mDevice->CreateShaderResourceView(mTexture, &desc, &mTextureSRV),"fail to creat srv");
+		
+			//texture->Release();
 		}
 	}
 
-	mContext->Unmap(debug, 0);
-
 }
 
-void VoxelOutput::prepare( int width, int height, int depth)
-{
-	mWidth = width;
-	mHeight = height;
-	mDepth = depth;
 
-	for (auto& i : mUAVs)
-	{
-		UAV& uav = i.second;
 
-		uav.texture.release();
-		uav.uav.release();
-		uav.buffer.release();
-		if (uav.para.isTexture)
-		{
-			CHECK_RESULT(Helper::createUAVTexture3D(&uav.texture, &uav.uav, mDevice, uav.para.format, mWidth, mHeight, mDepth),
-						 "failed to create uav texture3D,  cant use gpu voxelizer");
-		}
-		else
-		{
-			size_t count = std::min(uav.para.elementCount,(size_t) mWidth * mHeight * mDepth);
-			CHECK_RESULT(Helper::createUAVBuffer( &uav.buffer, &uav.uav,mDevice, uav.para.elementSize, count),
-						 "failed to create uav buffer, cannot use gpu voxelizer");
-		}
-
-		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
-			0, 0, NULL, uav.para.slot, 1, &uav.uav, NULL);
-		UINT initcolor[4] = { 0 };
-		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
-	}
-}
+//void VoxelOutput::prepare( int width, int height, int depth)
+//{
+//	mWidth = width;
+//	mHeight = height;
+//	mDepth = depth;
+//
+//	for (auto& i : mUAVs)
+//	{
+//		UAV& uav = i.second;
+//
+//		uav.texture.release();
+//		uav.uav.release();
+//		uav.buffer.release();
+//		if (uav.para.isTexture)
+//		{
+//			CHECK_RESULT(Helper::createUAVTexture3D(&uav.texture, &uav.uav, mDevice, uav.para.format, mWidth, mHeight, mDepth),
+//						 "failed to create uav texture3D,  cant use gpu voxelizer");
+//		}
+//		else
+//		{
+//			size_t count = std::min(uav.para.elementCount,(size_t) mWidth * mHeight * mDepth);
+//			CHECK_RESULT(Helper::createUAVBuffer( &uav.buffer, &uav.uav,mDevice, uav.para.elementSize, count),
+//						 "failed to create uav buffer, cannot use gpu voxelizer");
+//		}
+//
+//		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
+//			0, 0, NULL, uav.para.slot, 1, &uav.uav, NULL);
+//		UINT initcolor[4] = { 0 };
+//		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
+//	}
+//}
 
 Voxelizer::Voxelizer()
 {
@@ -351,7 +335,7 @@ void Voxelizer::setScale(float v)
 	mScale = v;
 }
 
-Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** res)
+Vector3 Voxelizer::prepare( size_t count, VoxelResource** res)
 {
 	if (res == nullptr)
 		return Vector3::ZERO;
@@ -382,7 +366,6 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 
 
 
-	output->prepare(osize.x * scale, osize.y* scale, osize.z * scale);
 
 	return osize ;
 }
@@ -391,7 +374,7 @@ Vector3 Voxelizer::prepare(VoxelOutput* output, size_t count, VoxelResource** re
 void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 {
 	Vector3 range;
-	if ((range = prepare(output, count, res)) == Vector3::ZERO)
+	if ((range = prepare(count, res)) == Vector3::ZERO)
 	{
 		EXCEPT(" cant use gpu voxelizer");
 	}
@@ -416,19 +399,67 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 		mContext->RSSetState(rasterizerState);
 	}
 
-	for (size_t i = 0; i < count; ++i)
-	{
-		voxelizeImpl(res[i], range);
-	}
 
+	
+	auto render = [count, range, &res, this](UAVObj& uav, void* data, size_t size, bool bcount)
+	{
+		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
+			0, 0, NULL, bcount?0:1, 1, &uav.uav, NULL);
+		UINT initcolor[4] = { 0 };
+		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
+		for (size_t i = 0; i < count; ++i)
+		{
+			voxelizeImpl(res[i], range, bcount);
+		}
+		mapBuffer(data, size, uav);
+
+	};
+
+	UAVObj counter;
+	Helper::createUAVCounter(&counter.buffer, &counter.uav, mDevice);
+	int numVoxels;
+	render(counter, &numVoxels, sizeof(numVoxels), true);
+
+	if (numVoxels)
+	{
+		UAVObj target;
+		Helper::createUAVBuffer(&target.buffer, &target.uav, mDevice, sizeof(Voxel), numVoxels);
+		std::vector<Voxel> buff(numVoxels);
+		render(target, buff.data(), sizeof(Voxel) * numVoxels, false);
+
+		output->format(buff.data(), numVoxels);
+	}
 }
+
+void Voxelizer::mapBuffer(void* data, size_t size, UAVObj& obj)
+{
+
+	Interface<ID3D11Buffer> debug = NULL;
+	D3D11_BUFFER_DESC dsDesc;
+	obj.buffer->GetDesc(&dsDesc);
+	dsDesc.BindFlags = 0;
+	dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	dsDesc.MiscFlags = 0;
+	dsDesc.Usage = D3D11_USAGE_STAGING;
+
+	CHECK_RESULT(mDevice->CreateBuffer(&dsDesc, NULL, &debug),
+		"fail to create staging buffer, cant use gpu voxelizer");
+
+	mContext->CopyResource(debug, obj.buffer);
+	D3D11_MAPPED_SUBRESOURCE mr;
+	mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
+	memcpy(data, mr.pData, size);
+
+	mContext->Unmap(debug, 0);
+}
+
 
 Effect* Voxelizer::getEffect(VoxelResource* res)
 {
 	auto end = res->mDesc.end();
 	bool usingTexture = res->mDesc.find(S_TEXCOORD) != end;
 	bool usingColor = res->mDesc.find(S_COLOR) != end;
-	int hash = 1 + (usingColor ? 0 : 2) + (usingTexture ? 0 : 4);
+	int hash = 1 + (usingColor ? 2 : 0) + (usingTexture ? 4 : 0);
 
 	auto ret = mEffects.find(hash);
 	if (ret == mEffects.end())
@@ -443,7 +474,7 @@ Effect* Voxelizer::getEffect(VoxelResource* res)
 }
 
 
-void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
+void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool countOnly)
 {
 
 
@@ -480,16 +511,14 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 		Vector3 eye;
 		Vector3 at;
 		Vector3 up;
-		float width;
-		float height;
-		float depth;
 	};
 
 	const float scale = mScale / mVoxelSize;
 
+	float length = std::max(range.x, std::max(range.y, range.z));
+
 	EffectParameter parameters;
-	parameters.device = mDevice;
-	parameters.context = mContext;
+	parameters.bcount = countOnly;
 	parameters.world = mTranslation;
 	parameters.proj = mProjection;
 	parameters.width = range.x * scale;
@@ -498,13 +527,11 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 
 
 
-
-	//we need to render 3 times from different views
 	const ViewPara views[] =
 	{
-		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y, -range.z, range.y, range.x,
-		Vector3::ZERO, Vector3::NEGATIVE_UNIT_Y, Vector3::UNIT_Z, range.x, range.z, -range.y,
-		Vector3::ZERO, Vector3::UNIT_Z , Vector3::UNIT_Y, range.x, range.y,range.z,
+		Vector3::UNIT_X, Vector3::NEGATIVE_UNIT_X, Vector3::UNIT_Y,
+		Vector3::UNIT_Y, Vector3::NEGATIVE_UNIT_Y, Vector3::UNIT_Z,
+		Vector3::UNIT_Z, Vector3::NEGATIVE_UNIT_Z, Vector3::UNIT_Y,
 	};
 
 	size_t arraysize = ARRAYSIZE(views);
@@ -516,30 +543,29 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range)
 		const XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
 		const XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
 
-		parameters.view = XMMatrixTranspose(XMMatrixLookToLH(Eye, At, Up));
-		parameters.viewport = i;
-
-		Vector3 half = Vector3(v.width, v.height, v.depth) / 2;
-		parameters.proj = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(
-			-half.x, half.x, -half.y, half.y, -half.z, half.z));
-
-		D3D11_VIEWPORT vp;
-		vp.Width = abs(v.width) * scale;
-		vp.Height = v.height * scale;
-		vp.MinDepth = 0.0f;
-		vp.MaxDepth = 1.0f;
-		vp.TopLeftX = 0;
-		vp.TopLeftY = 0;
-		mContext->RSSetViewports(1, &vp);
-
-		effect->update(parameters);
-
-		if (useIndex)
-			mContext->DrawIndexed(count, start, 0);
-		else
-			mContext->Draw(count, start);
+		parameters.views[i] = XMMatrixTranspose(XMMatrixLookToLH(Eye, At, Up));
 
 	}
+
+	float half = length / 2;
+	parameters.proj = XMMatrixTranspose(XMMatrixOrthographicOffCenterLH(
+		-half, half, -half, half, -half, half));
+
+	D3D11_VIEWPORT vp;
+	vp.Width = length* scale;
+	vp.Height = length* scale;
+	vp.MinDepth = 0.0f;
+	vp.MaxDepth = 1.0f;
+	vp.TopLeftX = 0;
+	vp.TopLeftY = 0;
+	mContext->RSSetViewports(1, &vp);
+
+	effect->update(mContext,parameters);
+
+	if (useIndex)
+		mContext->DrawIndexed(count, start, 0);
+	else
+		mContext->Draw(count, start);
 
 }
 
@@ -549,11 +575,4 @@ VoxelResource* Voxelizer::createResource()
 	VoxelResource* vr = new VoxelResource(mDevice);
 	mResources.push_back(vr);
 	return vr;
-}
-
-VoxelOutput* Voxelizer::createOutput()
-{
-	VoxelOutput* vo = new VoxelOutput(mDevice, mContext);
-	mOutputs.push_back(vo);
-	return vo;
 }

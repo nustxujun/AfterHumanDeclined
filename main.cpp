@@ -46,6 +46,20 @@ ID3D11Buffer*		optimizedVertices = NULL;
 ID3D11Buffer*		optimizedIndexes = NULL;
 size_t drawCount = 0;
 
+
+class VoxelData : public VoxelOutput
+{
+public:
+	void format(Voxel* voxels, size_t size)
+	{
+		datas.resize(size);
+		memcpy(datas.data(), voxels, size * sizeof(Voxel));
+	}
+	std::vector<Voxel> datas;
+	int width;
+	int height;
+	int depth;
+};
 VoxelData		voxels;
 std::vector<shape_t> shapes;
 std::vector<material_t> materials;
@@ -790,17 +804,12 @@ void optimizeVoxels()
 void voxelize(float s)
 {
 	Voxelizer v;
-	VoxelOutput* output = v.createOutput();
-	output->addUAVTexture3D(1, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
 
 	v.setScale(s);
 
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();
 
-	SponzaEffect sponzaEffect;
-	std::vector<EffectProxy> effects(shapes.size());
-	
 
 	std::vector<VoxelResource*> subs;
 	AABB aabb;
@@ -813,14 +822,14 @@ void voxelize(float s)
 		{
 			auto& mat = materials[matidvec[0]];
 
-			memcpy(effects[i].constant.diffuse, mat.diffuse, sizeof(float) * 3);
-			memcpy(effects[i].constant.ambient, mat.ambient, sizeof(float) * 3);
-			effects[i].constant.diffuse[3] = 1;
-			effects[i].constant.ambient[3] = 1;
-			texDiff = mat.diffuse_texname;
-			sponzaEffect.addTexture(texDiff);
-			effects[i].texture = texDiff;
-			effects[i].effect = &sponzaEffect;
+			//memcpy(effects[i].constant.diffuse, mat.diffuse, sizeof(float) * 3);
+			//memcpy(effects[i].constant.ambient, mat.ambient, sizeof(float) * 3);
+			//effects[i].constant.diffuse[3] = 1;
+			//effects[i].constant.ambient[3] = 1;
+			//texDiff = mat.diffuse_texname;
+			//sponzaEffect.addTexture(texDiff);
+			//effects[i].texture = texDiff;
+			//effects[i].effect = &sponzaEffect;
 		}
 
 
@@ -834,17 +843,24 @@ void voxelize(float s)
 		{
 			memcpy(begin, &shapes[i].mesh.positions[j * 3], 12);
 			begin += 12;
-			if (usetexcoord)
+			if (false && usetexcoord)
+			{
 				memcpy(begin, &shapes[i].mesh.texcoords[j * 2], 8);
 
-			begin += 8;
+				begin += 8;
+			}
 		}
 
 
 		auto res = v.createResource();
-		res->setVertex(data, size, stride);
+		VertexDesc desc[] =
+		{
+			S_POSITION, 0, 12,
+			//S_TEXCOORD, 12, 8,
+		};
+		res->setVertex(data, size, 12, desc,1);
 		res->setIndex(shapes[i].mesh.indices.data(), shapes[i].mesh.indices.size(), 4);
-		res->setEffect(&effects[i]);
+		//res->setEffect(&effects[i]);
 
 		subs.push_back(res);
 
@@ -852,15 +868,11 @@ void voxelize(float s)
 
 	buffer.swap(std::vector<char>());
 
-	v.addEffect(&sponzaEffect);
 
 
-	v.voxelize(output, subs.size(), subs.data());
-
-	output->exportData(voxels, 1);
+	v.voxelize(&voxels, subs.size(), subs.data());
 
 
-	v.removeEffect(&sponzaEffect);
 
 	std::cout << (GetTickCount() - timer) << " ms" << std::endl;
 

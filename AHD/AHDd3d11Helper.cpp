@@ -42,6 +42,7 @@ HRESULT D3D11Helper::createUAVBuffer(ID3D11Buffer** buffer, ID3D11UnorderedAcces
 	ZeroMemory(&uavDesc, sizeof(uavDesc));
 	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
 	uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	uavDesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_COUNTER;
 	uavDesc.Buffer.NumElements = elementCount;
 	hr = device->CreateUnorderedAccessView(*buffer, &uavDesc, uav);
 
@@ -51,7 +52,36 @@ HRESULT D3D11Helper::createUAVBuffer(ID3D11Buffer** buffer, ID3D11UnorderedAcces
 		return hr;
 	}
 	return hr;
+}
+HRESULT D3D11Helper::createUAVCounter(ID3D11Buffer** buffer, ID3D11UnorderedAccessView** uav, ID3D11Device* device)
+{
+	D3D11_BUFFER_DESC bd;
+	ZeroMemory(&bd, sizeof(bd));
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.ByteWidth = sizeof(int);
+	bd.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+	bd.CPUAccessFlags = 0;
+	bd.StructureByteStride = sizeof(int);
+	bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
+	HRESULT hr = device->CreateBuffer(&bd, NULL, buffer);
+	if (FAILED(hr))
+		return hr;
+
+	D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc;
+	ZeroMemory(&uavDesc, sizeof(uavDesc));
+	uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+	uavDesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_COUNTER;
+	uavDesc.Buffer.NumElements = 1;
+	hr = device->CreateUnorderedAccessView(*buffer, &uavDesc, uav);
+
+	if (FAILED(hr))
+	{
+		(*buffer)->Release();
+		return hr;
+	}
+	return hr;
 }
 
 

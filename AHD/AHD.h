@@ -40,24 +40,23 @@ namespace AHD
 
 	struct EffectParameter
 	{
-		ID3D11Device* device;
-		ID3D11DeviceContext* context;
-
+		bool bcount;
 		XMMATRIX world;
-		XMMATRIX view;
+		XMMATRIX views[3];
 		XMMATRIX proj;
 
 		float width;
 		float height;
 		float depth;
-		size_t viewport;// from 0 to 2 
 	};
 
 	enum Semantic
 	{
 		S_POSITION,
 		S_COLOR,
-		S_TEXCOORD
+		S_TEXCOORD,
+
+		S_NUM
 	};
 
 	struct VertexDesc
@@ -72,9 +71,10 @@ namespace AHD
 	public:
 		void init(ID3D11Device* device,const std::map<Semantic,VertexDesc>& desc);
 		void prepare(ID3D11DeviceContext* context);
-		void update(EffectParameter& paras);
+		void update(ID3D11DeviceContext* context, EffectParameter& paras);
 		void clean();
 
+		ID3D11GeometryShader* mGeometryShader;
 		ID3D11VertexShader* mVertexShader;
 		ID3D11PixelShader* mPixelShader;
 		ID3D11InputLayout* mLayout;
@@ -95,7 +95,7 @@ namespace AHD
 	public :
 		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size);
 		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
-		void removeIndexes();
+		void setTexture(size_t width, size_t height, void* data);
 
 		~VoxelResource();
 
@@ -107,12 +107,16 @@ namespace AHD
 
 		Interface<ID3D11Buffer> mVertexBuffer = nullptr;
 		Interface<ID3D11Buffer> mIndexBuffer = nullptr;
+		Interface<ID3D11Texture2D> mTexture = nullptr;
+		Interface<ID3D11ShaderResourceView> mTextureSRV = nullptr;
 		std::vector<char> mVertexData;
 		std::vector<char> mIndexData;
+		std::vector<int> mTextureData;
 		size_t mVertexStride;
 		size_t mIndexStride;
 		size_t mVertexCount;
 		size_t mIndexCount;
+		size_t mTexWidth, mTexHeight;
 
 		ID3D11Device* mDevice;
 
@@ -121,57 +125,27 @@ namespace AHD
 		std::map<Semantic, VertexDesc> mDesc;
 	};
 
-	struct VoxelData
+	struct Voxel
 	{
-		std::vector<char> datas;
-		int width = 0;
-		int height = 0;
-		int depth = 0;
-
-	
+		Vector3 pos;
+		//int color;
 	};
 
 	class VoxelOutput
 	{
 	public:
-		void addUAVBuffer(size_t slot, size_t elementSize, size_t elementCount = ~0);
-		void addUAVTexture3D(size_t slot, DXGI_FORMAT format, size_t elementSize);
-		void removeUAV(size_t slot);
-
-		void exportData(VoxelData& data, size_t slot);
-
-		VoxelOutput(ID3D11Device* device, ID3D11DeviceContext* context);
-
-		void prepare( int width, int height, int depth);
-
-	private:
-		int mWidth;
-		int mHeight;
-		int mDepth;
-
-		struct UAVParameter
-		{
-			size_t slot;
-			DXGI_FORMAT format;
-			size_t elementSize;
-			bool isTexture;
-			size_t elementCount;
-		};
-		struct UAV
-		{
-			UAVParameter para;
-			Interface<ID3D11Texture3D> texture;
-			Interface<ID3D11Buffer> buffer;
-			Interface<ID3D11UnorderedAccessView> uav;
-		};
-
-		std::map<size_t, UAV> mUAVs;
-		ID3D11Device* mDevice;
-		ID3D11DeviceContext* mContext;
+		virtual void format(Voxel* voxels, size_t size) = 0;
 	};
 
 	class Voxelizer
 	{
+
+		struct UAVObj
+		{
+			Interface<ID3D11Buffer> buffer;
+			Interface<ID3D11UnorderedAccessView> uav;
+			size_t size;
+		};
 	public :
 		Voxelizer();
 		Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context);
@@ -190,10 +164,11 @@ namespace AHD
 		VoxelOutput* createOutput();
 
 	private:
-		void voxelizeImpl(VoxelResource* res, const Vector3& range);
-		Vector3 prepare(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
+		void voxelizeImpl(VoxelResource* res, const Vector3& range, bool countOnly);
+		Vector3 prepare( size_t resourceNum, VoxelResource** res);
 		void cleanResource();
 		Effect* getEffect(VoxelResource* res);
+		void mapBuffer(void* data, size_t size, UAVObj& obj);
 	private:
 
 
@@ -210,7 +185,6 @@ namespace AHD
 		std::vector<VoxelResource*> mResources;
 		std::vector<VoxelOutput*> mOutputs;
 
-		
 	};
 }
 
