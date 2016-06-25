@@ -106,7 +106,7 @@ void Effect::prepare(ID3D11DeviceContext* context)
 
 void Effect::update(ID3D11DeviceContext* context, EffectParameter& paras)
 {
-	context->UpdateSubresource(mConstant, 0, NULL, &paras.world, 0, 0);
+	context->UpdateSubresource(mConstant, 0, NULL, &paras, 0, 0);
 }
 
 
@@ -509,7 +509,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	struct ViewPara
 	{
 		Vector3 eye;
-		Vector3 at;
+		Vector3 dir;
 		Vector3 up;
 	};
 
@@ -520,18 +520,17 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	EffectParameter parameters;
 	parameters.bcount = countOnly;
 	parameters.world = mTranslation;
-	parameters.proj = mProjection;
-	parameters.width = range.x * scale;
-	parameters.height = range.y * scale;
-	parameters.depth = range.z * scale;
+	parameters.width = length* scale;
+	parameters.height = length * scale;
+	parameters.depth = length * scale;
 
 
 
 	const ViewPara views[] =
 	{
-		Vector3::UNIT_X, Vector3::NEGATIVE_UNIT_X, Vector3::UNIT_Y,
-		Vector3::UNIT_Y, Vector3::NEGATIVE_UNIT_Y, Vector3::UNIT_Z,
-		Vector3::UNIT_Z, Vector3::NEGATIVE_UNIT_Z, Vector3::UNIT_Y,
+		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y,
+		Vector3::ZERO, Vector3::UNIT_Y, Vector3::UNIT_Z,
+		Vector3::ZERO, Vector3::UNIT_Z, Vector3::UNIT_Y,
 	};
 
 	size_t arraysize = ARRAYSIZE(views);
@@ -540,10 +539,10 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	{
 		const ViewPara& v = views[i];
 		const XMVECTOR Eye = XMVectorSet(v.eye.x, v.eye.y, v.eye.z, 0.0f);
-		const XMVECTOR At = XMVectorSet(v.at.x, v.at.y, v.at.z, 0.0f);
+		const XMVECTOR Dir = XMVectorSet(v.dir.x, v.dir.y, v.dir.z, 0.0f);
 		const XMVECTOR Up = XMVectorSet(v.up.x, v.up.y, v.up.z, 0.0f);
 
-		parameters.views[i] = XMMatrixTranspose(XMMatrixLookToLH(Eye, At, Up));
+		parameters.views[i] = XMMatrixTranspose(XMMatrixLookToLH(Eye, Dir, Up));
 
 	}
 

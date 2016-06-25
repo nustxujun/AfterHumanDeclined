@@ -40,7 +40,6 @@ namespace AHD
 
 	struct EffectParameter
 	{
-		bool bcount;
 		XMMATRIX world;
 		XMMATRIX views[3];
 		XMMATRIX proj;
@@ -48,6 +47,7 @@ namespace AHD
 		float width;
 		float height;
 		float depth;
+		int bcount;
 	};
 
 	enum Semantic
@@ -127,8 +127,8 @@ namespace AHD
 
 	struct Voxel
 	{
-		Vector3 pos;
-		//int color;
+		int pos[3];
+		int color;
 	};
 
 	class VoxelOutput

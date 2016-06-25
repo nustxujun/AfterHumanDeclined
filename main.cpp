@@ -23,7 +23,7 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 20;
+float scale = 10;
 const char* modelname = "cup.obj";
 
 
@@ -52,10 +52,27 @@ class VoxelData : public VoxelOutput
 public:
 	void format(Voxel* voxels, size_t size)
 	{
-		datas.resize(size);
-		memcpy(datas.data(), voxels, size * sizeof(Voxel));
+		int len = 0;
+		for (int i = 0; i < size; ++i)
+		{
+			for (int j = 0; j < 3; ++j)
+				len = max(voxels[i].pos[j] + 1,len);
+		}
+		datas.resize(len * len * len);
+		int* data = datas.data();
+
+		for (int i = 0; i < size; ++i)
+		{
+			int x = voxels[i].pos[0];
+			int y = voxels[i].pos[1];
+			int z = voxels[i].pos[2];
+
+			data[x + y * len + z * len * len] = voxels[i].color;
+
+		}
+		width = height = depth = len - 1;
 	}
-	std::vector<Voxel> datas;
+	std::vector<int> datas;
 	int width;
 	int height;
 	int depth;

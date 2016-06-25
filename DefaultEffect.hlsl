@@ -1,6 +1,5 @@
 cbuffer ConstantBuffer : register(b0)
 {
-	bool bcount;
 	matrix World;
 	matrix ViewX;
 	matrix ViewY;
@@ -10,10 +9,18 @@ cbuffer ConstantBuffer : register(b0)
 	float width;
 	float height;
 	float depth;
+	int bcount;
 }
 
 RWStructuredBuffer<int> counter:register(u0);
-RWStructuredBuffer<float3> voxels:register(u1);
+
+struct Voxel
+{
+	int3 pos;
+	int color;
+};
+
+RWStructuredBuffer<Voxel> voxels:register(u1);
 
 struct VS_INPUT
 {
@@ -75,24 +82,24 @@ void gs(triangle GS_INPUT input[3], inout TriangleStream<PS_INPUT> output)
 		float X = abs(normal.x);
 	float Y = abs(normal.y);
 	float Z = abs(normal.z);
-	matrix view;
-	unsigned int axis;
+	matrix view = ViewY;
+	unsigned int axis = 1;
 
-	if (X > Y && X > Z)
-	{
-		axis = 0; 
-		view = ViewX;
-	}
-	else if (Y > X && Y > Z)
-	{
-		axis = 1;
-		view = ViewY;
-	}
-	else
-	{
-		axis = 2;
-		view = ViewZ;
-	}
+	//if (X > Y && X > Z)
+	//{
+	//	axis = 0; 
+	//	view = ViewX;
+	//}
+	//else if (Y > X && Y > Z)
+	//{
+	//	axis = 1;
+	//	view = ViewY;
+	//}
+	//else
+	//{
+	//	axis = 2;
+	//	view = ViewZ;
+	//}
 
 	for (int i = 0; i < 3; ++i)
 	{
@@ -117,33 +124,34 @@ void gs(triangle GS_INPUT input[3], inout TriangleStream<PS_INPUT> output)
 //--------------------------------------------------------------------------------------
 void ps(PS_INPUT input) 
 {
-	if (bcount)
+	if (bcount != 0)
 	{
 		counter[0] = counter.IncrementCounter();
 		discard;
 	}
 
-	int3 pos = 0;
-
+	Voxel v;
+	v.color = 0xffffffff;
 	if (input.axis == 0)
 	{
-		pos.x = input.pos.z * width;
-		pos.y = height - input.pos.y;
-		pos.z = input.pos.x;
+		v.pos.x = input.pos.z * width;
+		v.pos.y = height - input.pos.y;
+		v.pos.z = input.pos.x;
+		v.color = 0xff804040;
 	}
 	else if (input.axis == 1)
 	{
-		pos.x = input.pos.x;
-		pos.y = input.pos.z * height;
-		pos.z = depth - input.pos.y;
+		v.pos.x = input.pos.x;
+		v.pos.y = input.pos.z * height;
+		v.pos.z = depth - input.pos.y;
 	}
 	else
 	{
-		pos.x = input.pos.x;
-		pos.y = height - input.pos.y;
-		pos.z = input.pos.z * depth;
+		v.pos.x = input.pos.x;
+		v.pos.y = height - input.pos.y;
+		v.pos.z = input.pos.z * depth;
 	}
-	voxels[voxels.IncrementCounter()] = float3(1, 1, 10);
+	voxels[voxels.IncrementCounter()] = v;
 }
 
 
