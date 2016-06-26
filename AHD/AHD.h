@@ -109,6 +109,7 @@ namespace AHD
 		Interface<ID3D11Buffer> mIndexBuffer = nullptr;
 		Interface<ID3D11Texture2D> mTexture = nullptr;
 		Interface<ID3D11ShaderResourceView> mTextureSRV = nullptr;
+		Interface<ID3D11SamplerState> mSampler = nullptr;
 		std::vector<char> mVertexData;
 		std::vector<char> mIndexData;
 		std::vector<int> mTextureData;
@@ -128,7 +129,7 @@ namespace AHD
 	struct Voxel
 	{
 		int pos[3];
-		int color;
+		int color[4];
 	};
 
 	class VoxelOutput

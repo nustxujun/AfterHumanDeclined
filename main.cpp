@@ -23,8 +23,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 10;
-const char* modelname = "cup.obj";
+float scale = 0.03;
+const char* modelname = "sponza.obj";
 
 
 
@@ -52,6 +52,8 @@ class VoxelData : public VoxelOutput
 public:
 	void format(Voxel* voxels, size_t size)
 	{
+		std::cout << "voxels count: " << size << std::endl;
+
 		int len = 0;
 		for (int i = 0; i < size; ++i)
 		{
@@ -67,10 +69,11 @@ public:
 			int y = voxels[i].pos[1];
 			int z = voxels[i].pos[2];
 
-			data[x + y * len + z * len * len] = voxels[i].color;
+			auto& color = voxels[i].color;
+			data[x + y * len + z * len * len] = color[0]  + (color[1] << 8) + (color[2] << 16) + 0xff000000;
 
 		}
-		width = height = depth = len - 1;
+		width = height = depth = len;
 	}
 	std::vector<int> datas;
 	int width;
@@ -483,7 +486,7 @@ HRESULT initDevice()
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_B8G8R8A8_UNORM, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 
 	};
 	UINT numElements = ARRAYSIZE(layout);
@@ -801,6 +804,7 @@ void optimizeVoxels()
 		testQueue.pop_front();
 	}
 
+	std::cout << "faces count: " << faces.size() << std::endl;
 	assert(!faces.empty() && "nothing is voxelized.");
 
 	if (optimizedVertices)
@@ -835,49 +839,60 @@ void voxelize(float s)
 	{
 		std::string texDiff, texAmb;
 		auto& matidvec = shapes[i].mesh.material_ids;
+		int diffuse = 0;
+		TextureLoader::Data texData;
 		if (!matidvec.empty())
 		{
 			auto& mat = materials[matidvec[0]];
 
 			//memcpy(effects[i].constant.diffuse, mat.diffuse, sizeof(float) * 3);
 			//memcpy(effects[i].constant.ambient, mat.ambient, sizeof(float) * 3);
-			//effects[i].constant.diffuse[3] = 1;
+			diffuse = 0xff000000 + ((int)(mat.diffuse[0] * 255) << 16) + ((int)(mat.diffuse[1] * 255) << 8) + ((int)(mat.diffuse[2] * 255) );
+			//memcpy(diffuse, mat.diffuse, sizeof(float) * 3);
 			//effects[i].constant.ambient[3] = 1;
 			//texDiff = mat.diffuse_texname;
 			//sponzaEffect.addTexture(texDiff);
 			//effects[i].texture = texDiff;
 			//effects[i].effect = &sponzaEffect;
+
+
+			if (!mat.diffuse_texname.empty() )
+				texData = TextureLoader::createTexture(mat.diffuse_texname.c_str());
 		}
 
 
 		size_t size = shapes[i].mesh.positions.size() / 3;
-		const size_t stride = 12 + 8;
+		bool usetexcoord = !shapes[i].mesh.texcoords.empty() && !texData.isNull() ;
+		const size_t stride = 12 + sizeof(diffuse) + (usetexcoord ? 8 : 0);
 		buffer.reserve(size * stride);
 		char* data = buffer.data();
 		char* begin = data;
-		bool usetexcoord = !shapes[i].mesh.texcoords.empty();
 		for (size_t j = 0; j < size; ++j)
 		{
 			memcpy(begin, &shapes[i].mesh.positions[j * 3], 12);
 			begin += 12;
-			if (false && usetexcoord)
+			memcpy(begin, &diffuse, sizeof(diffuse));
+			begin += sizeof(diffuse);
+			if ( usetexcoord)
 			{
 				memcpy(begin, &shapes[i].mesh.texcoords[j * 2], 8);
-
 				begin += 8;
 			}
 		}
 
 
 		auto res = v.createResource();
-		VertexDesc desc[] =
+		if (!texData.isNull())
+			res->setTexture(texData.width, texData.height, texData.data.data());
+		std::vector<VertexDesc> desc;
+		desc.push_back({ S_POSITION, 0, 12 });
+		desc.push_back({ S_COLOR, 12, 4 });
+		if (usetexcoord)
 		{
-			S_POSITION, 0, 12,
-			//S_TEXCOORD, 12, 8,
-		};
-		res->setVertex(data, size, 12, desc,1);
+			desc.push_back({ S_TEXCOORD, 16, 8 });
+		}
+		res->setVertex(data, size, stride, desc.data(), desc.size());
 		res->setIndex(shapes[i].mesh.indices.data(), shapes[i].mesh.indices.size(), 4);
-		//res->setEffect(&effects[i]);
 
 		subs.push_back(res);
 

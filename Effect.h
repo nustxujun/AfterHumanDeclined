@@ -87,11 +87,7 @@ public:
 		sampDesc.MaxAnisotropy = 16;
 		dev->CreateSamplerState(&sampDesc, &mSampler);
 
-		for (auto& i : mTextureMap)
-		{
-			i.second = TextureLoader::createTexture(dev, i.first.c_str());
-		}
-
+		
 	}
 	void prepare(ID3D11DeviceContext* cont)
 	{

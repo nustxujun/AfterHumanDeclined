@@ -9,7 +9,7 @@
 #include <D3DX11.h>
 #pragma comment (lib,"d3dx11.lib")
 
-ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, const char* file)
+TextureLoader::Data TextureLoader::createTexture( const char* file)
 {
 	FREE_IMAGE_FORMAT fif = FIF_UNKNOWN;
 	FIBITMAP *dib(0);
@@ -29,7 +29,7 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 		dib = FreeImage_Load(fif, file);
 	//if the image failed to load, return failure
 	if (dib == NULL)
-		return nullptr;
+		return Data();
 
 	//retrieve the image data
 	bits = FreeImage_GetBits(dib);
@@ -58,45 +58,48 @@ ID3D11ShaderResourceView* TextureLoader::createTexture(ID3D11Device* device, con
 			assert(0 && "unsupport format");
 	}
 
-	ID3D11Texture2D* texture;
-	{
-		D3D11_TEXTURE2D_DESC desc;
-		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		desc.Width = width;
-		desc.Height = height;
-		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-		desc.MipLevels = 1;
-		desc.ArraySize = 1;
-		desc.CPUAccessFlags = 0;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.MiscFlags = 0;
-		desc.Usage = D3D11_USAGE_DEFAULT;
+	//ID3D11Texture2D* texture;
+	//{
+	//	D3D11_TEXTURE2D_DESC desc;
+	//	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	//	desc.Width = width;
+	//	desc.Height = height;
+	//	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	//	desc.MipLevels = 1;
+	//	desc.ArraySize = 1;
+	//	desc.CPUAccessFlags = 0;
+	//	desc.SampleDesc.Count = 1;
+	//	desc.SampleDesc.Quality = 0;
+	//	desc.MiscFlags = 0;
+	//	desc.Usage = D3D11_USAGE_DEFAULT;
 
-		D3D11_SUBRESOURCE_DATA initdata;
-		initdata.pSysMem = bits;
-		initdata.SysMemPitch = 4 * width;
-		initdata.SysMemSlicePitch = 4 * width * height;
+	//	D3D11_SUBRESOURCE_DATA initdata;
+	//	initdata.pSysMem = bits;
+	//	initdata.SysMemPitch = 4 * width;
+	//	initdata.SysMemSlicePitch = 4 * width * height;
 
-		if (FAILED(device->CreateTexture2D(&desc, &initdata, &texture)))
-			return nullptr;
-	}
-	ID3D11ShaderResourceView* resource = nullptr;
-	{
-		D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		desc.Texture2D.MostDetailedMip = 0;
-		desc.Texture2D.MipLevels = -1;
-		if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
-		{
-			texture->Release();
-			return nullptr;
-		}
-		texture->Release();
-	}
+	//	if (FAILED(device->CreateTexture2D(&desc, &initdata, &texture)))
+	//		return nullptr;
+	//}
+	//ID3D11ShaderResourceView* resource = nullptr;
+	//{
+	//	D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+	//	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	//	desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	//	desc.Texture2D.MostDetailedMip = 0;
+	//	desc.Texture2D.MipLevels = -1;
+	//	if (FAILED(device->CreateShaderResourceView(texture, &desc, &resource)))
+	//	{
+	//		texture->Release();
+	//		return nullptr;
+	//	}
+	//	texture->Release();
+	//}
+
+	std::vector<char*> data(width * height * 4);
+	memcpy(data.data(), bits, data.size());
 
 	//Free FreeImage's copy of the data
 	FreeImage_Unload(dib);
-	return resource;
+	return Data(data.data(), width, height);
 }

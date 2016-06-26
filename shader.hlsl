@@ -67,18 +67,18 @@ VS_OUTPUT VS(VS_INPUT input)
 //--------------------------------------------------------------------------------------
 float4 PS(VS_OUTPUT input) : SV_Target
 {
-	float4 finalColor = 0;
-	finalColor += saturate(dot((float3)lightdir, input.normal)) * input.color;
-	float3 V = normalize(eye - input.worldPos);
-		float3 H = normalize((float3)lightdir + V);
-		float spec = pow(max(dot(input.normal, H), 0), ns);
-	float4 specolor = ks * spec;
+	//float4 finalColor = 0;
+	//finalColor += saturate(dot((float3)lightdir, input.normal)) * input.color;
+	//float3 V = normalize(eye - input.worldPos);
+	//	float3 H = normalize((float3)lightdir + V);
+	//	float spec = pow(max(dot(input.normal, H), 0), ns);
+	//float4 specolor = ks * spec;
 
-		finalColor += saturate(specolor);
+	//	finalColor += saturate(specolor);
 
-	finalColor = saturate(finalColor);
-	finalColor.a = 1;
-	return finalColor;
-	//return input.color;
+	//finalColor = saturate(finalColor);
+	//finalColor.a = 1;
+	//return finalColor;
+	return input.color;
 }
 

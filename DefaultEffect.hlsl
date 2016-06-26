@@ -12,12 +12,16 @@ cbuffer ConstantBuffer : register(b0)
 	int bcount;
 }
 
+
+Texture2D diffuseTex : register(t0);
+SamplerState diffuseSampler : register(s0);
+
 RWStructuredBuffer<int> counter:register(u0);
 
 struct Voxel
 {
 	int3 pos;
-	int color;
+	int4 color;
 };
 
 RWStructuredBuffer<Voxel> voxels:register(u1);
@@ -26,7 +30,7 @@ struct VS_INPUT
 {
 	float4 pos : POSITION;
 #ifdef USINGCOLOR
-	unsigned int color : COLOR0;
+	float4 color : COLOR0;
 #endif
 #ifdef USINGTEXTURE
 	float2 uv: TEXCOORD0;
@@ -37,7 +41,7 @@ struct GS_INPUT
 {
 	float4 pos: SV_POSITION;
 #ifdef USINGCOLOR
-	unsigned int color : COLOR0;
+	float4 color : COLOR0;
 #endif
 #ifdef USINGTEXTURE
 	float2 uv : TEXCOORD0;
@@ -49,7 +53,7 @@ struct PS_INPUT
 	float4 pos : SV_POSITION;
 	unsigned int axis : COLOR1;
 #ifdef USINGCOLOR
-	unsigned int color : COLOR0;
+	float4 color : COLOR0;
 #endif
 #ifdef USINGTEXTURE
 	float2 uv: TEXCOORD0;
@@ -82,24 +86,24 @@ void gs(triangle GS_INPUT input[3], inout TriangleStream<PS_INPUT> output)
 		float X = abs(normal.x);
 	float Y = abs(normal.y);
 	float Z = abs(normal.z);
-	matrix view = ViewY;
-	unsigned int axis = 1;
+	matrix view;
+	unsigned int axis;
 
-	//if (X > Y && X > Z)
-	//{
-	//	axis = 0; 
-	//	view = ViewX;
-	//}
-	//else if (Y > X && Y > Z)
-	//{
-	//	axis = 1;
-	//	view = ViewY;
-	//}
-	//else
-	//{
-	//	axis = 2;
-	//	view = ViewZ;
-	//}
+	if (X > Y && X > Z)
+	{
+		axis = 0; 
+		view = ViewX;
+	}
+	else if (Y > X && Y > Z)
+	{
+		axis = 1;
+		view = ViewY;
+	}
+	else
+	{
+		axis = 2;
+		view = ViewZ;
+	}
 
 	for (int i = 0; i < 3; ++i)
 	{
@@ -131,13 +135,22 @@ void ps(PS_INPUT input)
 	}
 
 	Voxel v;
-	v.color = 0xffffffff;
+	float4 color = float4(1, 1, 1, 1);
+#ifdef USINGCOLOR
+	color = input.color;
+#endif
+
+#ifdef USINGTEXTURE
+	color = saturate(color * diffuseTex.Sample(diffuseSampler, input.uv));
+#endif
+
+	v.color = D3DCOLORtoUBYTE4(color);
+
 	if (input.axis == 0)
 	{
 		v.pos.x = input.pos.z * width;
 		v.pos.y = height - input.pos.y;
 		v.pos.z = input.pos.x;
-		v.color = 0xff804040;
 	}
 	else if (input.axis == 1)
 	{

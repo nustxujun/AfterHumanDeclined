@@ -49,7 +49,7 @@ void Effect::init(ID3D11Device* device, const std::map<Semantic, VertexDesc>& de
 		int offset = 12;
 		if (usingColor)
 		{
-			desc.push_back({ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, offset, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+			desc.push_back({ "COLOR", 0, DXGI_FORMAT_B8G8R8A8_UNORM, 0, offset, D3D11_INPUT_PER_VERTEX_DATA, 0 });
 			offset += 4;
 		}
 		if (usingTexture)
@@ -165,7 +165,7 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 			if (uv)
 			{
 				memcpy(wbegin, begin + uv->offset, uv->size);
-				wbegin += color->size;
+				wbegin += uv->size;
 			}
 
 		}
@@ -188,6 +188,8 @@ void VoxelResource::setTexture(size_t width, size_t height, void* data)
 	size_t size = width * height;
 	mTextureData.resize(size);
 	memcpy(mTextureData.data(), data, size * sizeof(int));
+	mTexWidth = width;
+	mTexHeight = height;
 }
 
 VoxelResource::VoxelResource(ID3D11Device* device)
@@ -215,7 +217,7 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 	{
 		{
 			D3D11_TEXTURE2D_DESC desc;
-			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			desc.Width = mTexWidth;
 			desc.Height = mTexHeight;
 			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -235,15 +237,32 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 		}
 		{
 			D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 			desc.Texture2D.MostDetailedMip = 0;
 			desc.Texture2D.MipLevels = -1;
 			CHECK_RESULT(mDevice->CreateShaderResourceView(mTexture, &desc, &mTextureSRV),"fail to creat srv");
 		
 			//texture->Release();
+
 		}
+
+		{
+			D3D11_SAMPLER_DESC sampDesc;
+			ZeroMemory(&sampDesc, sizeof(sampDesc));
+			sampDesc.Filter = D3D11_FILTER_ANISOTROPIC;
+			sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+			sampDesc.MinLOD = 0;
+			sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+			sampDesc.MaxAnisotropy = 16;
+			CHECK_RESULT(mDevice->CreateSamplerState(&sampDesc, &mSampler), "fail to creat sampler");
+		}
+
 	}
+
 
 }
 
@@ -482,6 +501,8 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	UINT offset = 0;
 	mContext->IASetVertexBuffers(0, 1, &res->mVertexBuffer, &stride, &offset);
 	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	mContext->PSSetShaderResources(0, 1, &res->mTextureSRV);
+	mContext->PSSetSamplers(0, 1, &res->mSampler);
 
 	int start = 0;
 	int count = res->mVertexCount;
