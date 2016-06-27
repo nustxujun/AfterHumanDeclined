@@ -436,7 +436,7 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 
 	UAVObj counter;
 	Helper::createUAVCounter(&counter.buffer, &counter.uav, mDevice);
-	int numVoxels;
+	int numVoxels = 0;
 	render(counter, &numVoxels, sizeof(numVoxels), true);
 
 	if (numVoxels)
@@ -550,7 +550,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	const ViewPara views[] =
 	{
 		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y,
-		Vector3::ZERO, Vector3::UNIT_Y, Vector3::UNIT_Z,
+		Vector3::ZERO, Vector3::UNIT_Y, Vector3::NEGATIVE_UNIT_Z,
 		Vector3::ZERO, Vector3::UNIT_Z, Vector3::UNIT_Y,
 	};
 
