@@ -86,8 +86,8 @@ void gs(triangle GS_INPUT input[3], inout TriangleStream<PS_INPUT> output)
 		float X = abs(normal.x);
 	float Y = abs(normal.y);
 	float Z = abs(normal.z);
-	matrix view;
-	unsigned int axis;
+	matrix view ;
+	unsigned int axis ;
 
 	if (X > Y && X > Z)
 	{
@@ -130,7 +130,7 @@ void ps(PS_INPUT input)
 {
 	if (bcount != 0)
 	{
-		counter[0] = counter.IncrementCounter();
+		counter[0] = counter.IncrementCounter() + 1;
 		discard;
 	}
 
@@ -150,11 +150,11 @@ void ps(PS_INPUT input)
 	{
 		v.pos.x = input.pos.z * width;
 		v.pos.y = height - input.pos.y;
-		v.pos.z = input.pos.x;
+		v.pos.z = depth - input.pos.x;
 	}
 	else if (input.axis == 1)
 	{
-		v.pos.x = input.pos.x;
+		v.pos.x = width - input.pos.x;
 		v.pos.y = input.pos.z * height;
 		v.pos.z = depth - input.pos.y;
 	}

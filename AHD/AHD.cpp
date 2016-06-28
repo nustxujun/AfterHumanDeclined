@@ -550,7 +550,7 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	const ViewPara views[] =
 	{
 		Vector3::ZERO, Vector3::UNIT_X, Vector3::UNIT_Y,
-		Vector3::ZERO, Vector3::UNIT_Y, Vector3::NEGATIVE_UNIT_Z,
+		Vector3::ZERO, Vector3::UNIT_Y, Vector3::UNIT_Z,
 		Vector3::ZERO, Vector3::UNIT_Z, Vector3::UNIT_Y,
 	};
 

@@ -23,8 +23,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale = 0.03;
-const char* modelname = "sponza.obj";
+float scale =100;
+const char* modelname = "cup.obj";
 
 
 
@@ -839,9 +839,9 @@ void voxelize(float s)
 	{
 		std::string texDiff, texAmb;
 		auto& matidvec = shapes[i].mesh.material_ids;
-		int diffuse = 0;
+		int diffuse = 0xffffffff;
 		TextureLoader::Data texData;
-		if (!matidvec.empty())
+		if (!matidvec.empty() && matidvec[0] != -1)
 		{
 			auto& mat = materials[matidvec[0]];
 
