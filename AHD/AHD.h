@@ -95,7 +95,7 @@ namespace AHD
 	public :
 		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size);
 		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
-		void setTexture(size_t width, size_t height, void* data);
+		void setTexture(const std::string& name);
 
 		~VoxelResource();
 
@@ -107,18 +107,15 @@ namespace AHD
 
 		Interface<ID3D11Buffer> mVertexBuffer = nullptr;
 		Interface<ID3D11Buffer> mIndexBuffer = nullptr;
-		Interface<ID3D11Texture2D> mTexture = nullptr;
-		Interface<ID3D11ShaderResourceView> mTextureSRV = nullptr;
-		Interface<ID3D11SamplerState> mSampler = nullptr;
+
 		std::vector<char> mVertexData;
 		std::vector<char> mIndexData;
-		std::vector<int> mTextureData;
 		size_t mVertexStride;
 		size_t mIndexStride;
 		size_t mVertexCount;
 		size_t mIndexCount;
-		size_t mTexWidth, mTexHeight;
 
+		std::string mTexture;
 		ID3D11Device* mDevice;
 
 		AABB mAABB;
@@ -163,6 +160,8 @@ namespace AHD
 
 		VoxelResource* createResource();
 		VoxelOutput* createOutput();
+		void addTexture(const std::string& name, size_t width, size_t height, void* data);
+		bool hasTexture(const std::string& name);
 
 	private:
 		void voxelizeImpl(VoxelResource* res, const Vector3& range, bool countOnly);
@@ -186,6 +185,16 @@ namespace AHD
 		std::vector<VoxelResource*> mResources;
 		std::vector<VoxelOutput*> mOutputs;
 
+		struct Texture
+		{
+			Interface<ID3D11Texture2D> texture = nullptr;
+			Interface<ID3D11ShaderResourceView> srv= nullptr;
+			Interface<ID3D11SamplerState> sampler = nullptr;
+			size_t width = 0;
+			size_t height = 0;
+		};
+
+		std::map<std::string, Texture> mTextures;
 	};
 }
 

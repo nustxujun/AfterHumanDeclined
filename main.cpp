@@ -23,7 +23,7 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale =100;
+float scale = 0.01;
 const char* modelname = "cup.obj";
 
 
@@ -74,8 +74,10 @@ public:
 
 		}
 		width = height = depth = len;
+		count = size;
 	}
 	std::vector<int> datas;
+	int count;
 	int width;
 	int height;
 	int depth;
@@ -736,7 +738,8 @@ void optimizeVoxels()
 
 	std::vector<Face> faces;
 	std::vector<size_t> indexes;
-
+	faces.reserve(voxels.count * 3);
+	indexes.reserve(voxels.count * 18);
 	while (!testQueue.empty())
 	{
 		Block& b = **testQueue.begin();
@@ -967,33 +970,34 @@ void render()
 	context->DrawIndexed(drawCount, 0, 0);
 	swapChain->Present(0, 0);
 }
-
-int main()
-{
-	if (FAILED(initWindow(0, SW_SHOW)))
-		return 0;
 	if (FAILED(initDevice()) ||
-		FAILED(initGeometry()))
-	{
-		cleanDevice();
-		return 0;
-	}
-	MSG msg = { 0 };
-	while (WM_QUIT != msg.message)
-	{
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-		else
-		{
-			render();
-		}
-	}
-
-	cleanDevice();
-	
-	return 0;
-}
-
+//
+//int main()
+//{
+//	if (FAILED(initWindow(0, SW_SHOW)))
+//		return 0;
+//	if (FAILED(initDevice()) ||
+//		FAILED(initGeometry()))
+//	{
+//		cleanDevice();
+//		return 0;
+//	}
+//	MSG msg = { 0 };
+//	while (WM_QUIT != msg.message)
+//	{
+//		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+//		{
+//			TranslateMessage(&msg);
+//			DispatchMessage(&msg);
+//		}
+//		else
+//		{
+//			render();
+//		}
+//	}
+//
+//	cleanDevice();
+//	
+//	return 0;
+//}
+//
