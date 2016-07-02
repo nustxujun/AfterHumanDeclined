@@ -171,16 +171,22 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 		}
 	}
 
+	if (!mVertexData.empty())
+		CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mVertexData.size(), mVertexData.data()),
+		"fail to create vertex buffer,  cant use gpu voxelizer");
+	mVertexData.swap(decltype(mVertexData)());
 }
 
 
 void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t indexStride)
 {
 	size_t size = indexCount * indexStride;
-	mIndexData.resize(size);
-	memcpy(mIndexData.data(), indexes, size);
 	mIndexStride = indexStride;
 	mIndexCount = indexCount;
+
+	if (!mIndexData.empty())
+		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, indexCount, indexes),
+		"fail to create index buffer,  cant use gpu voxelizer");
 }
 
 void VoxelResource::setTexture(const std::string& name)
@@ -201,13 +207,9 @@ VoxelResource::~VoxelResource()
 
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
-	if (!mVertexData.empty())
-	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mVertexData.size(), mVertexData.data()),
-		"fail to create vertex buffer,  cant use gpu voxelizer");
 
-	if (!mIndexData.empty())
-		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mIndexData.size(), mIndexData.data()),
-		"fail to create index buffer,  cant use gpu voxelizer");
+
+
 
 }
 
@@ -557,7 +559,7 @@ void Voxelizer::addTexture(const std::string& name, size_t width, size_t height,
 	texture.height = height;
 	{
 		D3D11_TEXTURE2D_DESC desc;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 		desc.Width = width;
 		desc.Height = height;
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -577,7 +579,7 @@ void Voxelizer::addTexture(const std::string& name, size_t width, size_t height,
 	}
 		{
 			D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 			desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 			desc.Texture2D.MostDetailedMip = 0;
 			desc.Texture2D.MipLevels = -1;
