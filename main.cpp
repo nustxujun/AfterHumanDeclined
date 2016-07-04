@@ -14,7 +14,6 @@
 #include "AHDUtils.h"
 #include "ring.h"
 #include "TextureLoader.h"
-#include "Effect.h"
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -23,8 +22,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale =100;
-const char* modelname = "cup.obj";
+float scale =1;
+const char* modelname = "gugong.obj";
 
 
 
@@ -50,7 +49,7 @@ size_t drawCount = 0;
 class VoxelData : public VoxelOutput
 {
 public:
-	void format(Voxel* voxels, size_t size)
+	void output(Voxel* voxels, size_t size)
 	{
 		std::cout << "voxels count: " << size << std::endl;
 
@@ -74,11 +73,13 @@ public:
 
 		}
 		width = height = depth = len;
+		count = size;
 	}
 	std::vector<int> datas;
 	int width;
 	int height;
 	int depth;
+	int count;
 };
 VoxelData		voxels;
 std::vector<shape_t> shapes;
@@ -131,38 +132,6 @@ struct Target
 	XMFLOAT3 rot;
 }target;
 
-
-
-class EffectProxy : public Effect
-{
-public:
-	SponzaEffect* effect;
-
-	struct
-	{
-		float diffuse[4];
-		float ambient[4];
-	}constant;
-
-	std::string texture;
-
-	void init(ID3D11Device* device)
-	{}
-	void prepare(ID3D11DeviceContext* context)
-	{
-		memcpy(effect->mConstant.diffuse, &constant, sizeof(float) * 8);
-		effect->setTexture(0, texture);
-		effect->prepare(context);
-	}
-	void update(EffectParameter& paras)
-	{
-		effect->update(paras);
-	}
-	void clean()
-	{
-
-	}
-};
 
 
 enum Button
@@ -734,8 +703,8 @@ void optimizeVoxels()
 	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
 	testQueue.push_back(&blocks[0]);
 
-	std::vector<Face> faces;
-	std::vector<size_t> indexes;
+	std::vector<Face> faces(voxels.count * 3);
+	std::vector<size_t> indexes(voxels.count * 3 * 6);
 
 	while (!testQueue.empty())
 	{
@@ -826,7 +795,7 @@ void voxelize(float s)
 {
 	Voxelizer v;
 
-	v.setScale(s);
+	v.setSize(1.0f,s);
 
 	std::cout << "Voxelizing...";
 	long timer = GetTickCount();

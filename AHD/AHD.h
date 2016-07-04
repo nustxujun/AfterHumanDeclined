@@ -90,8 +90,6 @@ namespace AHD
 	class VoxelResource
 	{
 		friend class Voxelizer;
-
-
 	public :
 		void setVertex(const void* vertices, size_t vertexCount, size_t vertexStride, const VertexDesc* desc, size_t size);
 		void setIndex(const void* indexes, size_t indexCount, size_t indexStride);
@@ -135,7 +133,7 @@ namespace AHD
 	class VoxelOutput
 	{
 	public:
-		virtual void format(Voxel* voxels, size_t size) = 0;
+		virtual void output(Voxel* voxels, size_t size) = 0;
 	};
 
 	class Voxelizer
@@ -149,12 +147,9 @@ namespace AHD
 		};
 	public :
 		Voxelizer();
-		Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context);
 		~Voxelizer();
 
-		void setScale(float scale);
-		void setVoxelSize(float v);
-		
+		void setSize(float voxelSize, float scale);
 
 		void voxelize(VoxelOutput* output, size_t resourceNum, VoxelResource** res);
 
@@ -162,12 +157,10 @@ namespace AHD
 		void removeEffect(Effect* effect);
 
 		VoxelResource* createResource();
-		VoxelOutput* createOutput();
 
 	private:
 		void voxelizeImpl(VoxelResource* res, const Vector3& range, bool countOnly);
 		Vector3 prepare( size_t resourceNum, VoxelResource** res);
-		void cleanResource();
 		Effect* getEffect(VoxelResource* res);
 		void mapBuffer(void* data, size_t size, UAVObj& obj);
 	private:
@@ -175,7 +168,8 @@ namespace AHD
 
 		VoxelResource* mCurrentResource;
 		float mScale = 1.0f;
-		float mVoxelSize = 1.0f;
+		Vector3 mSize;
+
 		XMMATRIX mTranslation;
 		XMMATRIX mProjection;
 		std::map<int, Effect*> mEffects;

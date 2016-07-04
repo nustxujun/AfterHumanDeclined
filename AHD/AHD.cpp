@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "AHDd3d11Helper.h"
 #include <d3dcompiler.h>
+#include <functional>
 
 #undef max
 #undef min
@@ -266,59 +267,33 @@ void VoxelResource::prepare(ID3D11DeviceContext* context)
 
 }
 
-
-
-//void VoxelOutput::prepare( int width, int height, int depth)
-//{
-//	mWidth = width;
-//	mHeight = height;
-//	mDepth = depth;
-//
-//	for (auto& i : mUAVs)
-//	{
-//		UAV& uav = i.second;
-//
-//		uav.texture.release();
-//		uav.uav.release();
-//		uav.buffer.release();
-//		if (uav.para.isTexture)
-//		{
-//			CHECK_RESULT(Helper::createUAVTexture3D(&uav.texture, &uav.uav, mDevice, uav.para.format, mWidth, mHeight, mDepth),
-//						 "failed to create uav texture3D,  cant use gpu voxelizer");
-//		}
-//		else
-//		{
-//			size_t count = std::min(uav.para.elementCount,(size_t) mWidth * mHeight * mDepth);
-//			CHECK_RESULT(Helper::createUAVBuffer( &uav.buffer, &uav.uav,mDevice, uav.para.elementSize, count),
-//						 "failed to create uav buffer, cannot use gpu voxelizer");
-//		}
-//
-//		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
-//			0, 0, NULL, uav.para.slot, 1, &uav.uav, NULL);
-//		UINT initcolor[4] = { 0 };
-//		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
-//	}
-//}
-
 Voxelizer::Voxelizer()
 {
 	Helper::createDevice(&mDevice, &mContext);
 
-}
+	//no need to cull
+	Interface<ID3D11RasterizerState> rasterizerState;
+	{
+		D3D11_RASTERIZER_DESC desc;
+		desc.FillMode = D3D11_FILL_SOLID;
+		desc.CullMode = D3D11_CULL_NONE;
+		desc.FrontCounterClockwise = false;
+		desc.DepthBias = 0;
+		desc.DepthBiasClamp = 0;
+		desc.SlopeScaledDepthBias = 0;
+		desc.DepthClipEnable = true;
+		desc.ScissorEnable = false;
+		desc.MultisampleEnable = false;
+		desc.AntialiasedLineEnable = false;
 
-Voxelizer::Voxelizer(ID3D11Device* device, ID3D11DeviceContext* context)
-{
-	mDevice = device;
-	device->AddRef();
-	mContext = context;
-	context->AddRef();
-
+		CHECK_RESULT(mDevice->CreateRasterizerState(&desc, &rasterizerState),
+			"fail to create rasterizer state,  cant use gpu voxelizer");
+		mContext->RSSetState(rasterizerState);
+	}
 }
 
 Voxelizer::~Voxelizer()
 {
-	cleanResource();
-
 	for (auto& i : mResources)
 	{
 		delete i;
@@ -337,21 +312,9 @@ Voxelizer::~Voxelizer()
 
 }
 
-void Voxelizer::cleanResource()
+void Voxelizer::setSize(float voxelSize, float scale)
 {
-
-
-}
-
-
-void Voxelizer::setVoxelSize(float v)
-{
-	mVoxelSize = v;
-}
-
-void Voxelizer::setScale(float v)
-{
-	mScale = v;
+	mScale = scale / voxelSize;
 }
 
 Vector3 Voxelizer::prepare( size_t count, VoxelResource** res)
@@ -366,27 +329,15 @@ Vector3 Voxelizer::prepare( size_t count, VoxelResource** res)
 		aabb.merge(res[i]->mAABB);
 	}
 
-
-	float scale = mScale / mVoxelSize;
+	
 	Vector3 osize = aabb.getSize();
-	//osize += Vector3::UNIT_SCALE;
-
 
 	//transfrom
 	Vector3 center = aabb.getCenter();
-
-
 	mTranslation = XMMatrixTranspose(XMMatrixTranslation(-center.x, -center.y, -center.z));
 	
-	float ex = 2 / scale;
-	osize.x += ex;
-	osize.y += ex;
-	osize.z += ex;
 
-
-
-
-	return osize ;
+	return aabb.getSize();
 }
 
 
@@ -398,78 +349,54 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 		EXCEPT(" cant use gpu voxelizer");
 	}
 
-	//no need to cull
-	Interface<ID3D11RasterizerState> rasterizerState;
+	auto mapBuffer = [this](std::function<void(void*)> cb, UAVObj& obj)
 	{
-		D3D11_RASTERIZER_DESC desc;
-		desc.FillMode = D3D11_FILL_SOLID;
-		desc.CullMode = D3D11_CULL_NONE;
-		desc.FrontCounterClockwise = false;
-		desc.DepthBias = 0;
-		desc.DepthBiasClamp = 0;
-		desc.SlopeScaledDepthBias = 0;
-		desc.DepthClipEnable = true;
-		desc.ScissorEnable = false;
-		desc.MultisampleEnable = false;
-		desc.AntialiasedLineEnable = false;
 
-		CHECK_RESULT(mDevice->CreateRasterizerState(&desc, &rasterizerState),
-					 "fail to create rasterizer state,  cant use gpu voxelizer");
-		mContext->RSSetState(rasterizerState);
-	}
+		Interface<ID3D11Buffer> debug = NULL;
+		D3D11_BUFFER_DESC dsDesc;
+		obj.buffer->GetDesc(&dsDesc);
+		dsDesc.BindFlags = 0;
+		dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		dsDesc.MiscFlags = 0;
+		dsDesc.Usage = D3D11_USAGE_STAGING;
+
+		CHECK_RESULT(mDevice->CreateBuffer(&dsDesc, NULL, &debug),
+			"fail to create staging buffer, cant use gpu voxelizer");
+
+		mContext->CopyResource(debug, obj.buffer);
+		D3D11_MAPPED_SUBRESOURCE mr;
+		mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
+		//memcpy(data, mr.pData, size);
+		cb(mr.pData);
+		mContext->Unmap(debug, 0);
+	};
 
 
-	
-	auto render = [count, range, &res, this](UAVObj& uav, void* data, size_t size, bool bcount)
+	auto render = [mapBuffer, count, range, &res, this](UAVObj& uav, std::function<void(void*)> cb, bool bcount)
 	{
 		mContext->OMSetRenderTargetsAndUnorderedAccessViews(
-			0, 0, NULL, bcount?0:1, 1, &uav.uav, NULL);
+			0, 0, NULL, bcount ? 0 : 1, 1, &uav.uav, NULL);
 		UINT initcolor[4] = { 0 };
 		mContext->ClearUnorderedAccessViewUint(uav.uav, initcolor);
 		for (size_t i = 0; i < count; ++i)
 		{
 			voxelizeImpl(res[i], range, bcount);
 		}
-		mapBuffer(data, size, uav);
+		mapBuffer(cb, uav);
 
 	};
 
 	UAVObj counter;
 	Helper::createUAVCounter(&counter.buffer, &counter.uav, mDevice);
 	int numVoxels = 0;
-	render(counter, &numVoxels, sizeof(numVoxels), true);
+	render(counter, [&numVoxels](void* data){numVoxels = *((int*)data); }, true);
 
 	if (numVoxels)
 	{
 		UAVObj target;
 		Helper::createUAVBuffer(&target.buffer, &target.uav, mDevice, sizeof(Voxel), numVoxels);
-		std::vector<Voxel> buff(numVoxels);
-		render(target, buff.data(), sizeof(Voxel) * numVoxels, false);
-
-		output->format(buff.data(), numVoxels);
+		render(target, std::function<void(void*)>([&output, numVoxels](void*data){output->output((Voxel*)data, numVoxels); }), false);
 	}
-}
-
-void Voxelizer::mapBuffer(void* data, size_t size, UAVObj& obj)
-{
-
-	Interface<ID3D11Buffer> debug = NULL;
-	D3D11_BUFFER_DESC dsDesc;
-	obj.buffer->GetDesc(&dsDesc);
-	dsDesc.BindFlags = 0;
-	dsDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	dsDesc.MiscFlags = 0;
-	dsDesc.Usage = D3D11_USAGE_STAGING;
-
-	CHECK_RESULT(mDevice->CreateBuffer(&dsDesc, NULL, &debug),
-		"fail to create staging buffer, cant use gpu voxelizer");
-
-	mContext->CopyResource(debug, obj.buffer);
-	D3D11_MAPPED_SUBRESOURCE mr;
-	mContext->Map(debug, 0, D3D11_MAP_READ, 0, &mr);
-	memcpy(data, mr.pData, size);
-
-	mContext->Unmap(debug, 0);
 }
 
 
@@ -534,16 +461,16 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 		Vector3 up;
 	};
 
-	const float scale = mScale / mVoxelSize;
+	
 
 	float length = std::max(range.x, std::max(range.y, range.z));
 
 	EffectParameter parameters;
 	parameters.bcount = countOnly;
 	parameters.world = mTranslation;
-	parameters.width = length* scale;
-	parameters.height = length * scale;
-	parameters.depth = length * scale;
+	parameters.width = length* mScale;
+	parameters.height = length * mScale;
+	parameters.depth = length * mScale;
 
 
 
@@ -572,8 +499,8 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 		-half, half, -half, half, -half, half));
 
 	D3D11_VIEWPORT vp;
-	vp.Width = length* scale;
-	vp.Height = length* scale;
+	vp.Width = length* mScale;
+	vp.Height = length* mScale;
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
 	vp.TopLeftX = 0;
