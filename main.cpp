@@ -14,6 +14,7 @@
 #include "AHDUtils.h"
 #include "ring.h"
 #include "TextureLoader.h"
+#include <hash_map>
 
 #pragma comment (lib,"d3d11.lib")
 #pragma comment (lib,"d3dx11.lib")
@@ -22,8 +23,8 @@ using namespace AHD;
 using namespace tinyobj;
 
 
-float scale =1;
-const char* modelname = "gugong.obj";
+float scale = 100;
+const char* modelname = "cup.obj";
 
 
 
@@ -45,22 +46,41 @@ ID3D11Buffer*		optimizedVertices = NULL;
 ID3D11Buffer*		optimizedIndexes = NULL;
 size_t drawCount = 0;
 
+typedef __int64 KEY;
+
+KEY getKey(int x, int y, int z)
+{
+	//int key = (x << 21) + ((y << 11) & (1023 << 11)) + (z & 2047);
+	//return key;
+
+	union
+	{
+		struct
+		{
+			short x;
+			short y;
+			short z;
+		};
+
+		__int64 key;
+	}hash = {x,y,z};
+	return hash.key;
+};
 
 class VoxelData : public VoxelOutput
 {
 public:
 	void output(Voxel* voxels, size_t size)
 	{
+		datas.reserve(size);
 		std::cout << "voxels count: " << size << std::endl;
 
-		int len = 0;
 		for (int i = 0; i < size; ++i)
 		{
-			for (int j = 0; j < 3; ++j)
-				len = max(voxels[i].pos[j] + 1,len);
+			width = max(width, voxels[i].pos[0]);
+			height = max(height, voxels[i].pos[1]);
+			depth = max(depth, voxels[i].pos[2]);
 		}
-		datas.resize(len * len * len);
-		int* data = datas.data();
 
 		for (int i = 0; i < size; ++i)
 		{
@@ -69,17 +89,20 @@ public:
 			int z = voxels[i].pos[2];
 
 			auto& color = voxels[i].color;
-			data[x + y * len + z * len * len] = color[0]  + (color[1] << 8) + (color[2] << 16) + 0xff000000;
+			//data[x + y * len + z * len * len] = color[0]  + (color[1] << 8) + (color[2] << 16) + 0xff000000;
+			datas[getKey(x,y,z)] = color[0] + (color[1] << 8) + (color[2] << 16) + 0xff000000;
 
 		}
-		width = height = depth = len;
+
 		count = size;
+
+		std::cout << "width: " << width << " height: " << height << " depth: " << depth << std::endl;
 	}
-	std::vector<int> datas;
-	int width;
-	int height;
-	int depth;
+	std::hash_map<KEY, int> datas;
 	int count;
+	int width = 0;
+	int height = 0;
+	int depth = 0;
 };
 VoxelData		voxels;
 std::vector<shape_t> shapes;
@@ -587,7 +610,7 @@ void optimizeVoxels()
 
 
 
-	const int* data = (const int *)voxels.datas.data();
+	auto& data = voxels.datas;
 	int width = voxels.width;
 	int height = voxels.height;
 	int depth = voxels.depth;
@@ -597,9 +620,18 @@ void optimizeVoxels()
 
 	auto getVoxel = [&data, width, height, depth](int x, int y, int z)->const int*
 	{
-		if (x < width && y < height && z < depth)
-			return data + x + y * width + z * height * width;
-		return nullptr;
+		if (x < 0 || x >= width ||
+			y < 0 || y >= height ||
+			z < 0 || z >= depth)
+			return 0;
+
+		static int blank = 0;
+		auto ret = data.find(getKey(x,y,z));
+		if (ret == data.end())
+			//return data + x + y * width + z * height * width;
+			return &blank;
+		else
+			return &ret->second;
 	};
 
 	auto checkBlock = [](Block& b1, Block& b2, FaceType face)
@@ -700,12 +732,14 @@ void optimizeVoxels()
 	
 
 	ring<Block*> testQueue;
+	
 	blocks[0] = { { 0, 0, 0 }, *getVoxel(0, 0, 0) ? N_X | N_Y | N_Z : 0, *getVoxel(0, 0, 0), C_INSERT };
 	testQueue.push_back(&blocks[0]);
 
-	std::vector<Face> faces(voxels.count * 3);
-	std::vector<size_t> indexes(voxels.count * 3 * 6);
-
+	std::vector<Face> faces(voxels.count);
+	std::vector<size_t> indexes(voxels.count * 6);
+	faces.reserve(voxels.count * 3);
+	indexes.reserve(voxels.count * 18);
 	while (!testQueue.empty())
 	{
 		Block& b = **testQueue.begin();
@@ -806,32 +840,33 @@ void voxelize(float s)
 	std::vector<char> buffer;
 	for (int i = 0; i < shapes.size();++i)
 	{
+		auto res = v.createResource();
 		std::string texDiff, texAmb;
 		auto& matidvec = shapes[i].mesh.material_ids;
 		int diffuse = 0xffffffff;
+		bool usetexcoord = !shapes[i].mesh.texcoords.empty();
 		TextureLoader::Data texData;
 		if (!matidvec.empty() && matidvec[0] != -1)
 		{
 			auto& mat = materials[matidvec[0]];
 
-			//memcpy(effects[i].constant.diffuse, mat.diffuse, sizeof(float) * 3);
-			//memcpy(effects[i].constant.ambient, mat.ambient, sizeof(float) * 3);
 			diffuse = 0xff000000 + ((int)(mat.diffuse[0] * 255) << 16) + ((int)(mat.diffuse[1] * 255) << 8) + ((int)(mat.diffuse[2] * 255) );
-			//memcpy(diffuse, mat.diffuse, sizeof(float) * 3);
-			//effects[i].constant.ambient[3] = 1;
-			//texDiff = mat.diffuse_texname;
-			//sponzaEffect.addTexture(texDiff);
-			//effects[i].texture = texDiff;
-			//effects[i].effect = &sponzaEffect;
 
+			if (!mat.diffuse_texname.empty())
+			{
+				if (!v.hasTexture(mat.diffuse_texname))
+				{
+					texData = TextureLoader::createTexture(mat.diffuse_texname.c_str());
+					v.addTexture(mat.diffuse_texname, texData.width, texData.height, texData.data.data());
+				}
+				res->setTexture(mat.diffuse_texname);
+			}
+			usetexcoord &= !mat.diffuse_texname.empty();
 
-			if (!mat.diffuse_texname.empty() )
-				texData = TextureLoader::createTexture(mat.diffuse_texname.c_str());
 		}
 
 
 		size_t size = shapes[i].mesh.positions.size() / 3;
-		bool usetexcoord = !shapes[i].mesh.texcoords.empty() && !texData.isNull() ;
 		const size_t stride = 12 + sizeof(diffuse) + (usetexcoord ? 8 : 0);
 		buffer.reserve(size * stride);
 		char* data = buffer.data();
@@ -850,9 +885,6 @@ void voxelize(float s)
 		}
 
 
-		auto res = v.createResource();
-		if (!texData.isNull())
-			res->setTexture(texData.width, texData.height, texData.data.data());
 		std::vector<VertexDesc> desc;
 		desc.push_back({ S_POSITION, 0, 12 });
 		desc.push_back({ S_COLOR, 12, 4 });
@@ -965,4 +997,4 @@ int main()
 	
 	return 0;
 }
-
+//
