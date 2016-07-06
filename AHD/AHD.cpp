@@ -146,12 +146,13 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 
 	mAABB.setNull();
 	size_t buffersize = vertexCount * vertexStride;
-	mVertexData.resize(buffersize);
+	std::vector<char> buffer;
+	buffer.reserve(buffersize);
 	{
 
 		const char* begin = (const char*)vertices;
 		const char* end = begin + buffersize;
-		char* wbegin = mVertexData.data();
+		char* wbegin = buffer.data();
 		for (; begin != end; begin += vertexStride)
 		{
 			Vector3 v = (*(const Vector3*)(begin + pos->offset));
@@ -172,25 +173,24 @@ void VoxelResource::setVertex(const void* vertices, size_t vertexCount, size_t v
 		}
 	}
 
+	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, buffersize, buffer.data()),
+		"fail to create vertex buffer,  cant use gpu voxelizer");
 }
 
 
 void VoxelResource::setIndex(const void* indexes, size_t indexCount, size_t indexStride)
 {
 	size_t size = indexCount * indexStride;
-	mIndexData.resize(size);
-	memcpy(mIndexData.data(), indexes, size);
 	mIndexStride = indexStride;
 	mIndexCount = indexCount;
+
+	CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, size, indexes),
+		"fail to create index buffer,  cant use gpu voxelizer");
 }
 
-void VoxelResource::setTexture(size_t width, size_t height, void* data)
+void VoxelResource::setTexture(const std::string& name)
 {
-	size_t size = width * height;
-	mTextureData.resize(size);
-	memcpy(mTextureData.data(), data, size * sizeof(int));
-	mTexWidth = width;
-	mTexHeight = height;
+	mTexture = name;
 }
 
 VoxelResource::VoxelResource(ID3D11Device* device)
@@ -206,63 +206,8 @@ VoxelResource::~VoxelResource()
 
 void VoxelResource::prepare(ID3D11DeviceContext* context)
 {
-	if (!mVertexData.empty())
-	CHECK_RESULT(Helper::createBuffer(&mVertexBuffer, mDevice, D3D11_BIND_VERTEX_BUFFER, mVertexData.size(), mVertexData.data()),
-		"fail to create vertex buffer,  cant use gpu voxelizer");
 
-	if (!mIndexData.empty())
-		CHECK_RESULT(Helper::createBuffer(&mIndexBuffer, mDevice, D3D11_BIND_INDEX_BUFFER, mIndexData.size(), mIndexData.data()),
-		"fail to create index buffer,  cant use gpu voxelizer");
 
-	if (!mTextureData.empty())
-	{
-		{
-			D3D11_TEXTURE2D_DESC desc;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			desc.Width = mTexWidth;
-			desc.Height = mTexHeight;
-			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-			desc.MipLevels = 1;
-			desc.ArraySize = 1;
-			desc.CPUAccessFlags = 0;
-			desc.SampleDesc.Count = 1;
-			desc.SampleDesc.Quality = 0;
-			desc.MiscFlags = 0;
-			desc.Usage = D3D11_USAGE_DEFAULT;
-
-			D3D11_SUBRESOURCE_DATA initdata;
-			initdata.pSysMem = mTextureData.data();
-			initdata.SysMemPitch = 4 * mTexWidth;
-			initdata.SysMemSlicePitch = 4 * mTexWidth * mTexHeight;
-			CHECK_RESULT(mDevice->CreateTexture2D(&desc, &initdata, &mTexture), "fail to create texture2d");
-		}
-		{
-			D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-			desc.Texture2D.MostDetailedMip = 0;
-			desc.Texture2D.MipLevels = -1;
-			CHECK_RESULT(mDevice->CreateShaderResourceView(mTexture, &desc, &mTextureSRV),"fail to creat srv");
-		
-			//texture->Release();
-
-		}
-
-		{
-			D3D11_SAMPLER_DESC sampDesc;
-			ZeroMemory(&sampDesc, sizeof(sampDesc));
-			sampDesc.Filter = D3D11_FILTER_ANISOTROPIC;
-			sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-			sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-			sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-			sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-			sampDesc.MinLOD = 0;
-			sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
-			sampDesc.MaxAnisotropy = 16;
-			CHECK_RESULT(mDevice->CreateSamplerState(&sampDesc, &mSampler), "fail to creat sampler");
-		}
-
-	}
 
 
 }
@@ -397,6 +342,10 @@ void Voxelizer::voxelize(VoxelOutput* output, size_t count, VoxelResource** res)
 		Helper::createUAVBuffer(&target.buffer, &target.uav, mDevice, sizeof(Voxel), numVoxels);
 		render(target, std::function<void(void*)>([&output, numVoxels](void*data){output->output((Voxel*)data, numVoxels); }), false);
 	}
+	else
+	{
+		output->output(nullptr, 0);
+	}
 }
 
 
@@ -428,9 +377,14 @@ void Voxelizer::voxelizeImpl(VoxelResource* res, const Vector3& range, bool coun
 	UINT offset = 0;
 	mContext->IASetVertexBuffers(0, 1, &res->mVertexBuffer, &stride, &offset);
 	mContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	mContext->PSSetShaderResources(0, 1, &res->mTextureSRV);
-	mContext->PSSetSamplers(0, 1, &res->mSampler);
 
+	if (!res->mTexture.empty())
+	{
+		auto tex = mTextures.find(res->mTexture);
+
+		mContext->PSSetShaderResources(0, 1, &tex->second.srv);
+		mContext->PSSetSamplers(0, 1, &tex->second.sampler);
+	}
 	int start = 0;
 	int count = res->mVertexCount;
 
@@ -522,4 +476,65 @@ VoxelResource* Voxelizer::createResource()
 	VoxelResource* vr = new VoxelResource(mDevice);
 	mResources.push_back(vr);
 	return vr;
+}
+
+void Voxelizer::addTexture(const std::string& name, size_t width, size_t height, void* data)
+{
+	if (hasTexture(name))
+		return;
+
+	auto& texture = mTextures[name];
+	texture.width = width;
+	texture.height = height;
+	{
+		D3D11_TEXTURE2D_DESC desc;
+		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		desc.Width = width;
+		desc.Height = height;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.CPUAccessFlags = 0;
+		desc.SampleDesc.Count = 1;
+		desc.SampleDesc.Quality = 0;
+		desc.MiscFlags = 0;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+
+		D3D11_SUBRESOURCE_DATA initdata;
+		initdata.pSysMem = data;
+		initdata.SysMemPitch = 4 * width;
+		initdata.SysMemSlicePitch = 4 * width * height;
+		CHECK_RESULT(mDevice->CreateTexture2D(&desc, &initdata, &texture.texture), "fail to create texture2d");
+	}
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			desc.Texture2D.MostDetailedMip = 0;
+			desc.Texture2D.MipLevels = -1;
+			CHECK_RESULT(mDevice->CreateShaderResourceView(texture.texture, &desc, &texture.srv), "fail to creat srv");
+
+			//texture->Release();
+
+		}
+
+		{
+			D3D11_SAMPLER_DESC sampDesc;
+			ZeroMemory(&sampDesc, sizeof(sampDesc));
+			sampDesc.Filter = D3D11_FILTER_ANISOTROPIC;
+			sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+			sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+			sampDesc.MinLOD = 0;
+			sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+			sampDesc.MaxAnisotropy = 16;
+			CHECK_RESULT(mDevice->CreateSamplerState(&sampDesc, &texture.sampler), "fail to creat sampler");
+		}
+
+}
+
+bool Voxelizer::hasTexture(const std::string& name)
+{
+	return mTextures.find(name) != mTextures.end();
 }
